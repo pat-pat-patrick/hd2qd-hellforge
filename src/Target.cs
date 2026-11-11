@@ -44,6 +44,9 @@ namespace Hd2Qd.HellForge
                 // update: it runs LuaJIT with ffi, bit and jit (proven: the game copy's
                 // bin\lua51.dll names itself LuaJIT 2.1.0-alpha and carries ffi)
                 ["lua"] = "luajit",
+                // and its Lua mods only through Bingus Shared Loader (HellForge's own rule: no Boot
+                // Mod Loader or MDL3; its mods page says Lua mods need Bingus Shared Loader)
+                ["loaders"] = new List<object> { "bsl" },
             };
         }
 
