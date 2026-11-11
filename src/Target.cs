@@ -40,6 +40,10 @@ namespace Hd2Qd.HellForge
             {
                 ["id"] = TargetId, ["title"] = "HellForge", ["found"] = install != null,
                 ["why"] = install == null ? Words.Get(Lang(host), "target_not_found") : null,
+                // HellForge's game is build 25480438, from before the official game's 2026-10-20
+                // update: it runs LuaJIT with ffi, bit and jit (proven: the game copy's
+                // bin\lua51.dll names itself LuaJIT 2.1.0-alpha and carries ffi)
+                ["lua"] = "luajit",
             };
         }
 

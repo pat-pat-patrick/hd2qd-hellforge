@@ -49,6 +49,7 @@ namespace HellForge.Tests
                     var t = Plugin.Target(host);
                     Assert.Equal("hellforge", t["id"]);
                     Assert.True((bool)t["found"]);
+                    Assert.Equal("luajit", t["lua"]);                          // HellForge's game is older than the 10-20 update
                     Assert.Equal(2L, Plugin.TargetStatus(host)["pending"]);
 
                     var r = Plugin.TargetDeploy(host);
