@@ -225,7 +225,7 @@ namespace Hd2Qd.HellForge
         public static int Run(string command, string[] args, TextWriter o, Dictionary<string, object> host)
         {
             var home = Home(host);
-            var install = Found(home, true) ?? throw new HfError("no HellForge installation found (a folder with hellforge-install.json)");
+            var install = Found(home, true) ?? throw new HfError("No HellForge installation was found (a folder that contains hellforge-install.json).");
             switch (command)
             {
                 case "hellforge":
@@ -235,7 +235,7 @@ namespace Hd2Qd.HellForge
                     o.WriteLine(!s.GameCopy ? "not set up yet: start HellForge.exe once" : s.Running ? "a session runs: " + s.LastRun : "no session runs");
                     var list = Hf.ReadMods(install);
                     var mine = Placed.Load(home, install);
-                    o.WriteLine("modlist code: " + (list.Modlist ?? "none (no gameplay mod is on)"));
+                    o.WriteLine("modlist code: " + (list.Modlist ?? "none (no shared gameplay mods are enabled)"));
                     foreach (var m in list.Mods.Where(m => !m.Hidden))
                         o.WriteLine("  " + (m.Enabled ? "on " : "off") + "  " + m.Group.PadRight(10) + " " + m.Name + (m.Version != "" ? " " + m.Version : "") +
                                     (mine.Values.Any(e => string.Equals(e.Id, m.Id, StringComparison.OrdinalIgnoreCase)) ? "  [from the library]" : ""));
@@ -268,7 +268,7 @@ namespace Hd2Qd.HellForge
                             }
                             else
                             {
-                                var e = Placed.Of(Placed.Load(home, install), m.Path) ?? throw new HfError("not put into HellForge by this plugin");
+                                var e = Placed.Of(Placed.Load(home, install), m.Path) ?? throw new HfError("This mod was not added to HellForge by this plugin.");
                                 Placed.Remove(home, install, e);
                                 o.WriteLine(m.Name + ": taken out of HellForge");
                             }
@@ -284,9 +284,9 @@ namespace Hd2Qd.HellForge
                     if (args[0] == "--all")
                     {
                         var (marked, refusedAll) = Coop.SetAll(home, install, args[1] == "on");
-                        o.WriteLine("every gameplay mod only affects me: " + args[1]);
+                        o.WriteLine("all gameplay mods set to this player only: " + args[1]);
                         foreach (var n in marked) o.WriteLine("  marked: " + n);
-                        foreach (var n in refusedAll) o.WriteLine("  HellForge keeps it shared: " + n);
+                        foreach (var n in refusedAll) o.WriteLine("  HellForge requires it to remain shared: " + n);
                         return 0;
                     }
                     var list = Hf.ReadMods(install);
@@ -316,8 +316,8 @@ namespace Hd2Qd.HellForge
         static void NotRunning(string install)
         {
             var s = Hf.ReadStatus(install);
-            if (s.Running) throw new HfError("a HellForge session runs: HellForge keeps the mods it started with; change them after it ends");
-            if (!s.GameCopy) throw new HfError("HellForge is not set up yet: start HellForge.exe once");
+            if (s.Running) throw new HfError("A HellForge session is running. HellForge keeps the mods the session started with; they can be changed after it ends.");
+            if (!s.GameCopy) throw new HfError("HellForge has not been set up. Run HellForge.exe once to complete the setup.");
         }
 
         /// <summary>A refusal in the language.</summary>

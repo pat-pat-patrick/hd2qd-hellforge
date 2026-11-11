@@ -234,11 +234,11 @@ namespace HellForge.Tests
                         }),
                     };
                     var refused = ((List<object>)Plugin.TargetDeploy(host)["refused"]).Cast<string>().ToList();
-                    Assert.Contains(refused, x => x.Contains("Loader") && x.Contains("nothing of it"));
+                    Assert.Contains(refused, x => x.Contains("Loader") && x.Contains("contains nothing for"));
                     Assert.False(Directory.Exists(Path.Combine(f.Mods, "Loader")));
                     Assert.Empty(Hf.ReadMods(f.Install).Problems);
                     Assert.Equal(0L, Plugin.TargetStatus(host)["pending"]);              // not tried again until it changes
-                    Assert.Contains("0 placed, 1 as they were", (string)Plugin.TargetDeploy(host)["said"]);
+                    Assert.Contains("0 deployed, 1 unchanged", (string)Plugin.TargetDeploy(host)["said"]);
                 }
                 finally { Install.PlacesOverride = null; }
             }

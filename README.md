@@ -1,40 +1,43 @@
 # HellForge for HD2 Mod Quick Deploy
 
-A plugin of [HD2 Mod Quick Deploy](https://github.com/pat-pat-patrick/hd2-mod-cli) that launches
+A plugin for [HD2 Mod Quick Deploy](https://github.com/pat-pat-patrick/hd2-mod-cli) that launches
 [HellForge](https://github.com/SkyeShade/HellForge), the offline Helldivers 2, and manages its mods.
 
-## What it does
+## Features
 
 | | |
 |---|---|
-| Lobbies | While a session runs: every public HellForge lobby on any planet and difficulty (the game's own Quick Play keeps only the same planet and difficulty), what each needs, quick join, and the mods that would let you into more lobbies |
-| Sessions | Start a session, see each step (preparing, waiting for Steam, running, how it ended), end it |
-| Mods | HellForge's own list in its three co-op groups, with the modlist code: switch, reorder, pack options |
-| Deploy target | With a Quick Deploy that has deploy targets, HellForge appears beside Deploy: the main list then is HellForge's own (its own mods on, order and options), and Deploy puts each enabled mod into HellForge's `mods` folder as a folder of its own (hard links on the same drive; the library is never written), in the list's order, switched on; mods turned off are taken out |
-| Made for the official game | Each resource a library mod replaces is compared between the official game and HellForge's older one. The same in both, or the mod's own: used as it is. Text tables: the mod's changed lines carried onto HellForge's table. Render configuration, shader libraries and replaced game Lua scripts: left out. Anything else that differs: used as it is, and named |
-| Only affects me | Mark a code mod `"coop": "per-player"` in HellForge's copy; marked again when an update comes without it |
-| Warnings | A note on a library mod that replaces the render configuration or game text tables built for the official game, or calls Boot Mod Loader's own API |
-| Profile and settings | Profile (and new profiles), galactic war, co-op, play with strangers, sandbox, Forge Credits share, language packs |
-| Logs | Each session's logs, export, crash report (nothing is uploaded) |
+| Lobbies | While a session is running: every public HellForge lobby on any planet and difficulty (the game's Quick Play searches only the same planet and difficulty), the mods each lobby requires, quick join, and the mods that would make more lobbies joinable |
+| Sessions | Starting a session, each stage of it (preparing, waiting for Steam, running, how it ended), and ending it |
+| Mods | HellForge's mod list in its three co-op groups, with the modlist code: enabling, ordering and pack options |
+| Deploy target | In a Quick Deploy with deploy targets, HellForge can be selected above the library. The main list then shows HellForge's own enabled mods, order and options, and Deploy places each enabled mod in HellForge's `mods` folder as a separate folder (hard links on the same drive; the library is never modified), in the list's order and enabled. Disabled mods are removed |
+| Mods made for the official game | Each resource a library mod replaces is compared between the official game and HellForge's older version. Resources that are identical in both, or that belong to the mod, are used unchanged. Text tables: the mod's changed lines are merged into HellForge's table. Render configuration, shader libraries and replaced game Lua scripts are not deployed. Other differing resources are deployed unchanged and listed |
+| This player only | Marks a code mod `"coop": "per-player"` in HellForge's copy, and marks it again when an update arrives without the mark |
+| Warnings | A note on a library mod that replaces the render configuration or game text tables made for the official game, or that calls Boot Mod Loader's own API |
+| Profile and settings | Profile (including new profiles), galactic war, co-op, play with strangers, sandbox, Forge Credits share, language packs |
+| Logs | Each session's logs, export and crash report (nothing is uploaded) |
+| Title-bar icon | HellForge's own icon, read from the player's `HellForge.exe` at run time; the plugin does not include it. An anvil is shown when HellForge is not found |
 
-## How
+## Method
 
-Only through what HellForge documents for launchers of their own
+The plugin uses only what HellForge documents for external launchers
 (`app\sdk\docs\external-launchers.md`): `HellForge.Cli.exe` and the `mods` folder. It never writes
-HellForge's game copy, `app` folder, backend or network block, and refuses mod changes while a
-session runs, as HellForge does.
+to HellForge's game copy, `app` folder, backend or network block, and, like HellForge, refuses mod
+changes while a session is running.
 
-## What still needs HellForge.exe
+## Tasks that require HellForge.exe
 
 - The first setup and repairs: copying the game, Steam's ownership check, the network block.
-- Syncing the account (Sync Inventory). The plugin opens HellForge for it, and warns when the
-  Windows system proxy is on, which makes the sync fail.
+- Account sync (Sync Inventory). The plugin opens HellForge for it, and warns when the Windows
+  system proxy is enabled, which causes the sync to fail.
 
 ## Build
 
-`build.bat` runs the tests and writes `release\HD2QD.HellForge.dll` (.NET SDK 8 or later; set
-`DOTNET` to its `dotnet.exe` when it is not on PATH). Add the DLL on Quick Deploy's Plugins page.
+`build.bat` runs the tests and writes `release\HD2QD.HellForge.dll` (requires the .NET SDK 8 or
+later; set `DOTNET` to its `dotnet.exe` when it is not on PATH). Add the DLL on Quick Deploy's
+Plugins page.
 
 ## License
 
-MIT. HellForge is SkyeShade's (GPL-3.0); this plugin only runs its command line.
+MIT. HellForge is by SkyeShade (GPL-3.0); this plugin only runs its command line and reads its
+icon from the installed program.

@@ -69,14 +69,14 @@ namespace HellForge.Tests
 
                     // the same list again: nothing placed again
                     r = Plugin.TargetDeploy(host);
-                    Assert.Contains("0 placed, 2 as they were", (string)r["said"]);
+                    Assert.Contains("0 deployed, 2 unchanged", (string)r["said"]);
 
                     // a switched off in HellForge.exe comes back on; b off in the manager goes out
                     f.Disabled.Add(packA);
                     list.Remove(b);
                     Assert.Equal(1L, Plugin.TargetStatus(host)["pending"]);
                     r = Plugin.TargetDeploy(host);
-                    Assert.Contains("1 taken out", (string)r["said"]);
+                    Assert.Contains("1 removed", (string)r["said"]);
                     mods = Hf.ReadMods(f.Install).Mods;
                     Assert.DoesNotContain(mods, m => m.Id == packB);
                     Assert.True(mods.Single(m => m.Id == packA).Enabled);
@@ -92,7 +92,7 @@ namespace HellForge.Tests
 
                     // purge: everything it put there taken out, nothing else
                     var own = f.CodeFolder("someone.own", "Own Mod");
-                    Assert.Contains("1 mod taken out", Plugin.TargetPurge(host));
+                    Assert.Contains("1 mod removed", Plugin.TargetPurge(host));
                     Assert.False(Directory.Exists(Path.Combine(f.Mods, "First")));
                     Assert.True(Directory.Exists(own));
                 }
@@ -151,7 +151,7 @@ namespace HellForge.Tests
                     list.Clear();
                     var r = Plugin.TargetDeploy(host);
                     Assert.False(Directory.Exists(placed));
-                    Assert.Contains("1 taken out", (string)r["said"]);
+                    Assert.Contains("1 removed", (string)r["said"]);
                 }
                 finally { Install.PlacesOverride = null; }
             }
