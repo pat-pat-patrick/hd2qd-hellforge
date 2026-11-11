@@ -224,7 +224,7 @@ namespace Hd2Qd.HellForge
             var mine = Load(home, install);
             var games = Games(officialData, install);
             int n = wants.Count(w => !mine.TryGetValue(w.Id, out var e) || e.Signature != Signature(w, games)
-                                     || !Directory.Exists(System.IO.Path.Combine(Install.Mods(install), e.Folder ?? "\0")));
+                                     || (e.Folder != null && !Directory.Exists(System.IO.Path.Combine(Install.Mods(install), e.Folder))));
             n += mine.Keys.Count(id => wants.All(w => !string.Equals(w.Id, id, StringComparison.OrdinalIgnoreCase)));
             return n;
         }
@@ -252,7 +252,7 @@ namespace Hd2Qd.HellForge
                 foreach (var p in placedByHand.Values.Where(p => Placed.SamePath(p.Library, w.Path)).ToList())
                     try { Placed.Remove(home, install, p); } catch (HfError e) { res.Refused.Add(w.Name + ": " + e.Message); }
                 res.Mods++;
-                if (mine.TryGetValue(w.Id, out var e2) && e2.Signature == Signature(w, games) && Directory.Exists(System.IO.Path.Combine(mods, e2.Folder ?? "\0")))
+                if (mine.TryGetValue(w.Id, out var e2) && e2.Signature == Signature(w, games) && (e2.Folder == null || Directory.Exists(System.IO.Path.Combine(mods, e2.Folder))))
                 { res.Kept++; continue; }
                 toPlace.Add(w);
             }
@@ -270,6 +270,7 @@ namespace Hd2Qd.HellForge
                     entry.Signature = Signature(w, games);
                     entry.Games = games;
                     mine[w.Id] = entry;
+                    if (entry.Folder == null) { res.Refused.Add(Words.F(lang, "target_nothing_left", w.Name)); continue; }
                     ours.Add(entry.PackId);
                     res.Placed++;
                 }
@@ -394,6 +395,14 @@ namespace Hd2Qd.HellForge
                     entry.KeptDiffering = report.KeptDiffering.ToDictionary(k => k.Key.ToString("x16"), k => k.Value);
                 }
                 if (Directory.Exists(final)) Directory.Delete(final, true);
+                // nothing of it is for HellForge's game (Boot Mod Loader: its boot only, 2026-11-11: an
+                // empty pack HellForge listed as a problem): not placed at all
+                if (!Directory.EnumerateFiles(building).Any(f => Placed.IsPatch(System.IO.Path.GetFileName(f)) && !f.EndsWith(".gpu_resources") && !f.EndsWith(".stream")))
+                {
+                    entry.Folder = null;
+                    entry.Level = Port.Level.Partial.ToString();
+                    return entry;
+                }
                 Directory.Move(building, final);
                 return entry;
             }

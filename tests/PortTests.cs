@@ -207,6 +207,44 @@ namespace HellForge.Tests
         }
 
         [Fact]
+        public void AModWithNothingForHellForgeIsNotPlaced()
+        {
+            using (var f = new FakeHellForge())
+            {
+                Install.PlacesOverride = () => new[] { f.Install };
+                try
+                {
+                    Plugin.Found(f.Home, true);
+                    var official = Path.Combine(f.Root, "official", "data");
+                    var hfData = Path.Combine(f.Install, "game", "data");
+                    // a loader's boot: the game's own script, different in the two builds (Boot Mod Loader, 2026-11-11)
+                    FakeGame(official, new Dictionary<string, byte[]> { ["1111111111111111"] = Patch((0xF, Scan.Lua, Encoding.UTF8.GetBytes("-- newer boot"))) });
+                    FakeGame(hfData, new Dictionary<string, byte[]> { ["2222222222222222"] = Patch((0xF, Scan.Lua, Encoding.UTF8.GetBytes("-- older boot!!"))) });
+                    var lib = Path.Combine(f.Library, "Loader_01");
+                    Directory.CreateDirectory(lib);
+                    var src = Path.Combine(lib, "9ba626afa44a3aa3.patch_0");
+                    File.WriteAllBytes(src, Patch((0xF, Scan.Lua, Encoding.UTF8.GetBytes("-- the loader's boot"))));
+                    var host = new Dictionary<string, object>
+                    {
+                        ["api"] = 2L, ["home"] = f.Home, ["lang"] = "en", ["data"] = official,
+                        ["mods"] = (Func<List<Dictionary<string, object>>>)(() => new List<Dictionary<string, object>>
+                        {
+                            new Dictionary<string, object> { ["id"] = "llll0001", ["name"] = "Loader", ["path"] = lib,
+                                ["files"] = new List<object> { new Dictionary<string, object> { ["src"] = src, ["name"] = "9ba626afa44a3aa3.patch_9" } } },
+                        }),
+                    };
+                    var refused = ((List<object>)Plugin.TargetDeploy(host)["refused"]).Cast<string>().ToList();
+                    Assert.Contains(refused, x => x.Contains("Loader") && x.Contains("nothing of it"));
+                    Assert.False(Directory.Exists(Path.Combine(f.Mods, "Loader")));
+                    Assert.Empty(Hf.ReadMods(f.Install).Problems);
+                    Assert.Equal(0L, Plugin.TargetStatus(host)["pending"]);              // not tried again until it changes
+                    Assert.Contains("0 placed, 1 as they were", (string)Plugin.TargetDeploy(host)["said"]);
+                }
+                finally { Install.PlacesOverride = null; }
+            }
+        }
+
+        [Fact]
         public void WithoutTheOfficialGameNothingIsChanged()
         {
             using (var f = new FakeHellForge())

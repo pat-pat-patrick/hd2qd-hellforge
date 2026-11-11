@@ -113,6 +113,7 @@
   "target_clash": "{0}: HellForge already has it as \"{1}\", which Quick Deploy did not put there; remove that copy in HellForge to deploy the library's",
   "managed": "Deployed from Quick Deploy: switch it and order it in Quick Deploy's list (HellForge target)",
   "manage_in_manager": "Manage HellForge's mods in Quick Deploy's main window: choose HellForge beside Deploy. Each mod is made ready for HellForge's game when it is deployed.",
+  "target_nothing_left": "{0}: nothing of it is for HellForge's game (made for the official game only): not put into HellForge",
   "tab_mods": "MODs",
   "tab_settings": "Profile and settings",
   "tab_logs": "Logs",
