@@ -111,9 +111,9 @@ namespace Hd2Qd.HellForge
         {
             if (!Applies(m)) throw new HfError("not a code mod: " + m.Id);
             var choices = Choices(home);
-            var text = ManifestText(m) ?? throw new HfError("no hellforge-mod.json: " + m.Name);
             if (perPlayer)
             {
+                var text = ManifestText(m) ?? throw new HfError("no hellforge-mod.json: " + m.Name);
                 if (!choices.ContainsKey(m.Id)) choices[m.Id] = ValueIn(text);
                 Write(home, install, m, "per-player");
             }
@@ -124,6 +124,100 @@ namespace Hd2Qd.HellForge
                 choices.Remove(m.Id);
             }
             SaveChoices(home, choices);
+        }
+
+        // ---------------------------------------------------------------- every gameplay mod (the user, 2026-11-11)
+
+        /// <summary>"Every gameplay mod only affects me": each code mod HellForge counts as shared
+        /// gameplay (not one HellForge ships) is marked per-player, now and whenever one comes in,
+        /// so the modlist code is HellForge's own mods only and players with different mods still
+        /// match (the user, 2026-11-11: "把 gameplay mod 都声明成本地", for public matchmaking).
+        /// HellForge refuses per-player for a mod whose changes every machine must share (network
+        /// field types, a data spec: Mods.DecideTier in 0.4.0-beta): such a mod is put back as it
+        /// was and remembered, by id and version, so it is not tried again until it changes.
+        /// Kept in home\hellforge\coop-all.json.</summary>
+        static string AllFile(string home) => Path.Combine(home, "hellforge", "coop-all.json");
+
+        public static bool AllOn(string home) => Json.Bool(ReadAll(home), "on");
+
+        /// <summary>The mods HellForge refused, "id|version" to its reason.</summary>
+        public static Dictionary<string, string> Refused(string home)
+        {
+            var d = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            if (Json.Obj(ReadAll(home), "refused") is Dictionary<string, object> r)
+                foreach (var kv in r) d[kv.Key] = kv.Value as string;
+            return d;
+        }
+
+        static Dictionary<string, object> ReadAll(string home)
+        {
+            try
+            {
+                var p = AllFile(home);
+                return File.Exists(p) ? Json.Obj(File.ReadAllText(p, Encoding.UTF8)) : null;
+            }
+            catch (Exception e) when (e is IOException || e is UnauthorizedAccessException) { return null; }
+        }
+
+        static void SaveAll(string home, bool on, Dictionary<string, string> refused, List<string> made) =>
+            Placed.WriteText(AllFile(home), Json.Write(new Dictionary<string, object>
+            {
+                ["on"] = on, ["refused"] = refused.ToDictionary(kv => kv.Key, kv => (object)kv.Value), ["made"] = made.Cast<object>().ToList(),
+            }));
+
+        static List<string> Made(string home) => Json.List(ReadAll(home), "made").OfType<string>().ToList();
+
+        static string Key(Hf.Mod m) => m.Id + "|" + m.Version;
+
+        /// <summary>The setting turned on (every shared gameplay code mod marked now) or off (the
+        /// marks it made taken out; a mod marked by hand is a choice of its own and is kept only
+        /// when it was marked before the setting). Returns the names marked, and the refusals.</summary>
+        public static (List<string> Marked, List<string> Refused) SetAll(string home, string install, bool on)
+        {
+            if (!on)
+            {
+                var made = Made(home);
+                var list = Hf.ReadMods(install);
+                foreach (var m in list.Mods.Where(x => made.Contains(x.Id, StringComparer.OrdinalIgnoreCase) && Applies(x)))
+                    Set(home, install, m, false);
+                SaveAll(home, false, new Dictionary<string, string>(), new List<string>());
+                return (new List<string>(), new List<string>());
+            }
+            SaveAll(home, true, Refused(home), Made(home));
+            return MarkAll(home, install);
+        }
+
+        /// <summary>With the setting on: each shared gameplay code mod not marked yet, marked.</summary>
+        public static (List<string> Marked, List<string> Refused) MarkAll(string home, string install)
+        {
+            var marked = new List<string>();
+            var refusedNow = new List<string>();
+            if (!AllOn(home)) return (marked, refusedNow);
+            var refused = Refused(home);
+            var made = Made(home);
+            var list = Hf.ReadMods(install);
+            foreach (var m in list.Mods.Where(x => x.Group == "gameplay" && Applies(x) && !refused.ContainsKey(Key(x))).ToList())
+            {
+                Set(home, install, m, true);
+                var after = Hf.ReadMods(install);
+                var now = after.Mods.FirstOrDefault(x => string.Equals(x.Id, m.Id, StringComparison.OrdinalIgnoreCase));
+                var problem = after.Problems.FirstOrDefault(p => p.IndexOf(m.Name ?? "\0", StringComparison.OrdinalIgnoreCase) >= 0
+                                                              || p.IndexOf(m.Id, StringComparison.OrdinalIgnoreCase) >= 0
+                                                              || (m.Folder != null && p.IndexOf(Path.GetFileName(m.Folder), StringComparison.OrdinalIgnoreCase) >= 0)
+                                                              || (m.Archive != null && p.IndexOf(Path.GetFileName(m.Archive), StringComparison.OrdinalIgnoreCase) >= 0));
+                if (now == null || now.Group != "per-player" || problem != null)
+                {
+                    // HellForge would not take it per-player: as it was, and not tried again until it changes
+                    Set(home, install, now ?? m, false);
+                    refused[Key(m)] = m.Name + ": " + (problem ?? ("HellForge keeps it " + (now?.Group ?? "out")));
+                    refusedNow.Add(refused[Key(m)]);
+                    continue;
+                }
+                if (!made.Contains(m.Id, StringComparer.OrdinalIgnoreCase)) made.Add(m.Id);
+                marked.Add(m.Name);
+            }
+            SaveAll(home, true, refused, made);
+            return (marked, refusedNow);
         }
 
         /// <summary>The marked mods whose copy in HellForge lost the value (a new version came)

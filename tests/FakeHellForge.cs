@@ -81,32 +81,45 @@ namespace HellForge.Tests
 
         public sealed class M { public string Id, Name, Folder, Archive, Group; public List<string> Tags = new List<string>(); }
 
+        /// <summary>What the last list left out, as HellForge's Mods.Load reports it.</summary>
+        public readonly List<string> Problems = new List<string>();
+
         public List<M> List()
         {
             var list = new List<M>();
+            Problems.Clear();
             foreach (var dir in Directory.GetDirectories(Mods).Where(d => !Path.GetFileName(d).StartsWith(".")))
-                if (Read(dir, null) is M m) list.Add(m);
+                if (Read(dir, null, Problems) is M m) list.Add(m);
             foreach (var zip in Directory.GetFiles(Mods, "*.zip"))
             {
                 var to = Path.Combine(Mods, ".unpacked", Path.GetFileNameWithoutExtension(zip) + "-" + new FileInfo(zip).LastWriteTimeUtc.Ticks);
                 if (!Directory.Exists(to)) ZipFile.ExtractToDirectory(zip, to);
-                if (Read(to, zip) is M m) list.Add(m);
+                if (Read(to, zip, Problems) is M m) list.Add(m);
             }
             return list;
         }
 
-        static M Read(string dir, string archive)
+        static M Read(string dir, string archive, List<string> problems)
         {
             var code = Path.Combine(dir, "hellforge-mod.json");
             if (File.Exists(code))
             {
                 var text = File.ReadAllText(code);
                 var d = Json.Obj(text);
-                return new M
+                bool perPlayer = Json.Str(d, "coop") == "per-player";
+                // Mods.DecideTier: a mod with network field types cannot be per-player; it is left out with a problem
+                if (perPlayer && text.Contains("networkFieldTypes"))
+                {
+                    problems.Add((archive != null ? Path.GetFileName(archive) : Path.GetFileName(dir)) + ": coop is per-player, but native.networkFieldTypes change the network for every player.");
+                    return null;
+                }
+                var m = new M
                 {
                     Id = Json.Str(d, "id"), Name = Json.Str(d, "name"), Folder = dir, Archive = archive, Tags = { "code" },
-                    Group = Json.Str(d, "coop") == "per-player" ? "per-player" : "gameplay",
+                    Group = perPlayer ? "per-player" : "gameplay",
                 };
+                if (Json.Bool(d, "bundledInTest")) m.Tags.Add("bundled");
+                return m;
             }
             var id = Placed.IdOf(dir, Path.GetFileName(dir));
             if (id == null) return null;
@@ -114,14 +127,16 @@ namespace HellForge.Tests
             return new M { Id = id, Name = name, Folder = dir, Archive = archive, Tags = { "pack" }, Group = "cosmetic" };
         }
 
-        Dictionary<string, object> ModsJson() => new Dictionary<string, object>
+        Dictionary<string, object> ModsJson() => ModsJson(List());
+
+        Dictionary<string, object> ModsJson(List<M> listed) => new Dictionary<string, object>
         {
-            ["mods"] = List().Select(m => (object)new Dictionary<string, object>
+            ["mods"] = listed.Select(m => (object)new Dictionary<string, object>
             {
                 ["id"] = m.Id, ["name"] = m.Name, ["version"] = "", ["enabled"] = !Disabled.Contains(m.Id), ["group"] = m.Group,
                 ["tags"] = m.Tags.Cast<object>().ToArray(), ["folder"] = m.Folder, ["archive"] = m.Archive, ["removable"] = true, ["options"] = null,
             }).ToArray(),
-            ["problems"] = new object[0], ["modlist"] = null, ["settings"] = Path.Combine(Mods, "hellforge-mods.json"),
+            ["problems"] = Problems.Cast<object>().ToArray(), ["modlist"] = null, ["settings"] = Path.Combine(Mods, "hellforge-mods.json"),
         };
 
         // ---------------------------------------------------------------- building mods
@@ -134,6 +149,15 @@ namespace HellForge.Tests
             File.WriteAllText(Path.Combine(dir, "manifest.json"),
                 "{\"Version\": 1, \"Guid\": \"" + guid + "\", \"Name\": \"" + name + "\", \"Options\": [{\"Name\": \"Main\", \"Include\": [\"Main\"]}]}");
             File.WriteAllBytes(Path.Combine(dir, "Main", "0123456789abcdef.patch_0"), patch ?? Patch());
+            return dir;
+        }
+
+        /// <summary>A code mod as a folder in mods\ (as a player copies one there).</summary>
+        public string CodeFolder(string id, string name, string extra = "")
+        {
+            var dir = Path.Combine(Mods, name);
+            Directory.CreateDirectory(dir);
+            File.WriteAllText(Path.Combine(dir, "hellforge-mod.json"), "{\r\n  \"id\": \"" + id + "\",\r\n  \"name\": \"" + name + "\"" + extra + "\r\n}\r\n");
             return dir;
         }
 

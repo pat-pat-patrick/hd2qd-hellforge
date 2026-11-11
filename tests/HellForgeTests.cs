@@ -297,6 +297,54 @@ namespace HellForge.Tests
             }
         }
 
+        [Fact]
+        public void EveryGameplayModOnlyAffectsMeExceptWhatHellForgeRefuses()
+        {
+            using (var f = new FakeHellForge())
+            {
+                var free = f.CodeFolder("a.free", "Free Mod");
+                var net = f.CodeFolder("b.net", "Net Mod", ",\r\n  \"native\": {\"networkFieldTypes\": [1]}");
+                var own = f.CodeFolder("hf.bundled", "HellForge Own", ",\r\n  \"bundledInTest\": true");
+                var byHand = f.CodeFolder("c.hand", "By Hand", ",\r\n  \"coop\": \"per-player\"");
+                var netText = File.ReadAllText(Path.Combine(net, "hellforge-mod.json"));
+                var ownText = File.ReadAllText(Path.Combine(own, "hellforge-mod.json"));
+
+                Assert.False(Coop.AllOn(f.Home));
+                Assert.Empty(Coop.MarkAll(f.Home, f.Install).Marked);                    // off: nothing
+
+                var (marked, refused) = Coop.SetAll(f.Home, f.Install, true);
+                Assert.Equal(new[] { "Free Mod" }, marked);
+                Assert.Single(refused);
+                Assert.Contains("Net Mod", refused[0]);
+                Assert.Contains("networkFieldTypes", refused[0]);
+                var list = Hf.ReadMods(f.Install);
+                Assert.Equal("per-player", list.Mods.Single(m => m.Id == "a.free").Group);
+                Assert.Equal("gameplay", list.Mods.Single(m => m.Id == "b.net").Group);   // put back as it was
+                Assert.Equal(netText, File.ReadAllText(Path.Combine(net, "hellforge-mod.json")));
+                Assert.Equal("gameplay", list.Mods.Single(m => m.Id == "hf.bundled").Group);
+                Assert.Equal(ownText, File.ReadAllText(Path.Combine(own, "hellforge-mod.json")));
+                Assert.Empty(list.Problems);
+                Assert.Single(Coop.Refused(f.Home));
+
+                // the refused one is not tried again; a mod added later is marked by Start
+                f.CodeFolder("d.new", "New Mod");
+                var said = Plugin.Sync(f.Home, f.Install);
+                Assert.Contains(said, s => s.Contains("New Mod"));
+                Assert.DoesNotContain(said, s => s.Contains("Net Mod"));
+                Assert.Equal("per-player", Hf.ReadMods(f.Install).Mods.Single(m => m.Id == "d.new").Group);
+
+                // off: the marks it made are taken out; the one marked by hand before stays
+                Coop.SetAll(f.Home, f.Install, false);
+                list = Hf.ReadMods(f.Install);
+                Assert.Equal("gameplay", list.Mods.Single(m => m.Id == "a.free").Group);
+                Assert.Equal("gameplay", list.Mods.Single(m => m.Id == "d.new").Group);
+                Assert.Equal("per-player", list.Mods.Single(m => m.Id == "c.hand").Group);
+                Assert.Equal("{\r\n  \"id\": \"a.free\",\r\n  \"name\": \"Free Mod\"\r\n}\r\n", File.ReadAllText(Path.Combine(free, "hellforge-mod.json")));
+                Assert.False(Coop.AllOn(f.Home));
+                Assert.Empty(Plugin.Sync(f.Home, f.Install));
+            }
+        }
+
         // ---------------------------------------------------------------- what goes wrong on HellForge
 
         [Fact]

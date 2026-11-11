@@ -271,6 +271,8 @@ namespace Hd2Qd.HellForge
                 bool bingusOn = mods.Mods.Any(m => m.Enabled && IsBingus(m));
                 if (luaOn && !bingusOn) body.Children.Add(Line(T("no_bingus"), "Yellow"));
 
+                RenderAllOnlyMe();
+
                 var actions = Row();
                 var add = Btn(adding ? T("add_close") : T("add_from_library"), false, () => { adding = !adding; Render(); });
                 add.IsEnabled = !Locked;
@@ -294,6 +296,42 @@ namespace Hd2Qd.HellForge
                 }
                 var other = shown.Where(m => m.Group != "gameplay" && m.Group != "per-player" && m.Group != "cosmetic").ToList();
                 foreach (var m in other) body.Children.Add(ModRow(m, null, null));
+            }
+
+            /// <summary>The setting "every gameplay mod only affects me" (Coop.SetAll), and the mods
+            /// HellForge would not take that way.</summary>
+            void RenderAllOnlyMe()
+            {
+                var row = new DockPanel { Margin = new Thickness(0, 10, 0, 4), MaxWidth = 860, HorizontalAlignment = HorizontalAlignment.Left };
+                var sw = new CheckBox { Style = S("Switch"), IsChecked = Coop.AllOn(home), IsEnabled = !Locked, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 2, 16, 0) };
+                sw.Click += (s, e) => AllOnlyMe(sw.IsChecked == true);
+                DockPanel.SetDock(sw, Dock.Left);
+                row.Children.Add(sw);
+                var text = new StackPanel();
+                text.Children.Add(new TextBlock { Text = T("all_only_me"), FontSize = 14, FontWeight = FontWeights.SemiBold });
+                text.Children.Add(Small(T("all_only_me_hint"), new Thickness(0, 2, 0, 0)));
+                if (Coop.AllOn(home))
+                    foreach (var r in Coop.Refused(home).Values)
+                        text.Children.Add(new TextBlock { Text = T("all_only_me_refused", r), FontSize = 12, Foreground = B("Yellow"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 2, 0, 0) });
+                row.Children.Add(text);
+                body.Children.Add(row);
+            }
+
+            async void AllOnlyMe(bool on)
+            {
+                if (on && !Ask(T("all_only_me_ask"), T("all_only_me_go"))) { Render(); return; }
+                var inst = install;
+                List<string> refusedNow = null;
+                int marked = 0;
+                await Do(() =>
+                {
+                    var r = Coop.SetAll(home, inst, on);
+                    marked = r.Marked.Count; refusedNow = r.Refused;
+                    return new Hf.Result();
+                }, null);
+                if (refusedNow == null) return;
+                Foot(on ? T("all_only_me_done", marked) : T("all_only_me_off"));
+                if (refusedNow.Count > 0) Tell(T("all_only_me_refused_tell") + "\n" + string.Join("\n", refusedNow));
             }
 
             static bool IsBingus(Hf.Mod m) => m.Folder != null && File.Exists(Path.Combine(m.Folder, "BingusSharedLoader-manifest.json"));

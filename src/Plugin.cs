@@ -100,6 +100,9 @@ namespace Hd2Qd.HellForge
             }
             var list = Hf.ReadMods(install);
             foreach (var n in Coop.Reapply(home, install, list)) said.Add("only affects me again: " + n);
+            var all = Coop.MarkAll(home, install);
+            foreach (var n in all.Marked) said.Add("only affects me (every gameplay mod): " + n);
+            foreach (var n in all.Refused) said.Add("HellForge keeps it shared: " + n);
             notesAt = DateTime.MinValue;
             return said;
         }
@@ -159,7 +162,7 @@ namespace Hd2Qd.HellForge
             new[] { "hellforge", "show the HellForge installation, its session and the mods in its mods folder" },
             new[] { "hellforge-add", "hellforge-add MOD...: put library mods into HellForge's mods folder (hard links on the same drive)" },
             new[] { "hellforge-remove", "hellforge-remove MOD...: take mods this plugin put into HellForge out again (the library is not touched)" },
-            new[] { "hellforge-only-me", "hellforge-only-me MOD on|off: a HellForge code mod counted as each player's own in co-op (\"coop\": \"per-player\")" },
+            new[] { "hellforge-only-me", "hellforge-only-me MOD|--all on|off: a HellForge code mod (--all: every shared gameplay code mod, now and later) counted as each player's own in co-op (\"coop\": \"per-player\")" },
             new[] { "hellforge-play", "start a HellForge session with its launcher's settings" },
             new[] { "hellforge-stop", "hellforge-stop [--now]: end the running HellForge session" },
         };
@@ -220,6 +223,14 @@ namespace Hd2Qd.HellForge
                 {
                     if (args.Length != 2 || (args[1] != "on" && args[1] != "off")) return 2;
                     NotRunning(install);
+                    if (args[0] == "--all")
+                    {
+                        var (marked, refusedAll) = Coop.SetAll(home, install, args[1] == "on");
+                        o.WriteLine("every gameplay mod only affects me: " + args[1]);
+                        foreach (var n in marked) o.WriteLine("  marked: " + n);
+                        foreach (var n in refusedAll) o.WriteLine("  HellForge keeps it shared: " + n);
+                        return 0;
+                    }
                     var list = Hf.ReadMods(install);
                     var m = list.Mods.Where(x => Coop.Applies(x) && (string.Equals(x.Id, args[0], StringComparison.OrdinalIgnoreCase) || x.Name.IndexOf(args[0], StringComparison.OrdinalIgnoreCase) >= 0)).ToList();
                     if (m.Count != 1) throw new HfError(m.Count == 0 ? "no HellForge code mod is named " + args[0] : args[0] + " names " + m.Count + " mods");
