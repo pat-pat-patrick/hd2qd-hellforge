@@ -111,6 +111,7 @@ namespace Hd2Qd.HellForge
                 Id = m.TryGetValue("id", out var id) ? id as string : null,
                 Name = m.TryGetValue("name", out var n) ? n as string : null,
                 Path = m.TryGetValue("path", out var p) ? p as string : null,
+                For = m.TryGetValue("for", out var fo) ? fo as string : null,
                 Files = (m.TryGetValue("files", out var fl) && fl is IEnumerable<object> files ? files : new object[0])
                         .OfType<Dictionary<string, object>>().Select(x => (Src: x["src"] as string, Name: x["name"] as string))
                         .Where(x => x.Src != null && x.Name != null).ToList(),
@@ -124,6 +125,10 @@ namespace Hd2Qd.HellForge
         public sealed class Want
         {
             public string Id, Name, Path;
+            /// <summary>The target the library says it is made for (null: both): a build made for
+            /// HellForge (a port) goes in as it is, never made ready again.</summary>
+            public string For;
+            public bool MadeForHellForge => For == "hellforge";
             public List<(string Src, string Name)> Files = new List<(string, string)>();
             /// <summary>HellForge's own kind of mod (hellforge-mod.json): its whole folder goes in as it is,
             /// HellForge builds and loads it; its id is the manifest's.</summary>
@@ -131,10 +136,17 @@ namespace Hd2Qd.HellForge
 
             /// <summary>Every file of a whole mod's folder, relative, else the planned files.</summary>
             public List<(string Src, string Name)> AllFiles() =>
-                Whole ? Directory.EnumerateFiles(Path, "*", SearchOption.AllDirectories)
+                !Whole ? Files.Concat(TopFiles()).ToList()
+                : Directory.EnumerateFiles(Path, "*", SearchOption.AllDirectories)
                              .Where(f => !f.Substring(Path.TrimEnd('\\').Length + 1).StartsWith(".git"))
-                             .Select(f => (f, f.Substring(Path.TrimEnd('\\').Length + 1))).OrderBy(x => x.Item2, StringComparer.OrdinalIgnoreCase).ToList()
-                      : Files;
+                             .Select(f => (f, f.Substring(Path.TrimEnd('\\').Length + 1))).OrderBy(x => x.Item2, StringComparer.OrdinalIgnoreCase).ToList();
+
+            /// <summary>A pack's own files at its top, beside its patches (not those, not its manifest.json).</summary>
+            IEnumerable<(string Src, string Name)> TopFiles() =>
+                Path == null || !Directory.Exists(Path) ? Enumerable.Empty<(string, string)>()
+                : Directory.EnumerateFiles(Path).Select(f => (f, System.IO.Path.GetFileName(f)))
+                           .Where(x => !Placed.IsPatch(x.Item2) && !string.Equals(x.Item2, "manifest.json", StringComparison.OrdinalIgnoreCase))
+                           .OrderBy(x => x.Item2, StringComparer.OrdinalIgnoreCase);
         }
 
         public sealed class Entry
@@ -258,7 +270,7 @@ namespace Hd2Qd.HellForge
             }
             var hfData = HfData(install);
             var reports = toPlace.Count > 0 && games != "none"
-                ? Port.CheckSets(home, officialData, hfData, toPlace.Where(w => !w.Whole).ToDictionary(w => w.Id, w => w.Files.Select(f => (f.Src, f.Name)).ToList(), StringComparer.OrdinalIgnoreCase))
+                ? Port.CheckSets(home, officialData, hfData, toPlace.Where(w => !w.Whole && !w.MadeForHellForge).ToDictionary(w => w.Id, w => w.Files.Select(f => (f.Src, f.Name)).ToList(), StringComparer.OrdinalIgnoreCase))
                 : new Dictionary<string, Port.Report>();
             foreach (var w in toPlace)
             {
@@ -288,7 +300,10 @@ namespace Hd2Qd.HellForge
                 if (Directory.Exists(folder))
                 {
                     var r = Hf.Run(install, "mod-remove", "--id", gone.PackId);
-                    if (!r.Ok && Directory.Exists(folder)) { res.Refused.Add(gone.Name + ": " + r.Why); continue; }
+                    // one HellForge does not list (it could not read it: 2026-11-11, an empty pack) is ours to delete
+                    if (!r.Ok && Directory.Exists(folder))
+                        try { Directory.Delete(folder, true); }
+                        catch (Exception e) when (e is IOException || e is UnauthorizedAccessException) { res.Refused.Add(gone.Name + ": " + r.Why + "; " + e.Message); continue; }
                 }
                 mine.Remove(gone.QdId);
                 res.Removed++;
@@ -380,12 +395,22 @@ namespace Hd2Qd.HellForge
                     Directory.Move(building, final);
                     return own;
                 }
+                if (w.Path != null && Directory.Exists(w.Path))
+                    foreach (var top in Directory.EnumerateFiles(w.Path))
+                    {
+                        var name = System.IO.Path.GetFileName(top);
+                        if (Placed.IsPatch(name) || string.Equals(name, "manifest.json", StringComparison.OrdinalIgnoreCase)) continue;
+                        var to = System.IO.Path.Combine(building, name);
+                        if (File.Exists(to)) continue;
+                        if (!(sameDrive && CreateHardLink(to, top, IntPtr.Zero))) File.Copy(top, to, true);
+                    }
                 var guid = Deployed.GuidOf(w.Id);
                 Placed.WriteText(System.IO.Path.Combine(building, "manifest.json"), Json.Write(new Dictionary<string, object>
                 {
                     ["Version"] = 1, ["Guid"] = guid, ["Name"] = w.Name, ["Description"] = "Deployed by HD2 Mod Quick Deploy from its library.",
                 }));
-                var entry = new Entry { QdId = w.Id, Folder = folder, PackId = "pack." + guid, Name = w.Name, Level = Port.Level.Unknown.ToString(), Library = w.Path };
+                var entry = new Entry { QdId = w.Id, Folder = folder, PackId = "pack." + guid, Name = w.Name, Library = w.Path,
+                                       Level = (w.MadeForHellForge ? Port.Level.Ready : Port.Level.Unknown).ToString() };
                 if (report != null)
                 {
                     entry.Notes = Port.Apply(report, officialData, hfData, null, building);

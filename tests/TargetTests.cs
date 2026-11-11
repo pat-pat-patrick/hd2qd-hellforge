@@ -126,6 +126,38 @@ namespace HellForge.Tests
         }
 
         [Fact]
+        public void APacksOwnFilesGoAlongAndAFolderHellForgeCannotNameIsStillTakenOut()
+        {
+            using (var f = new FakeHellForge())
+            {
+                Install.PlacesOverride = () => new[] { f.Install };
+                try
+                {
+                    Plugin.Found(f.Home, true);
+                    var bsl = Mod(f, "bsl00001", "Bingus Shared Loader", 1, "33333333-cccc-3333-cccc-333333333333");
+                    // HellForge knows Bingus Shared Loader by this file (LuaRuntimes)
+                    File.WriteAllText(Path.Combine((string)bsl["path"], "BingusSharedLoader-manifest.json"), "{}");
+                    var list = new List<Dictionary<string, object>> { bsl };
+                    var host = Host(f, () => list);
+                    Plugin.TargetDeploy(host);
+                    var placed = Path.Combine(f.Mods, "Bingus Shared Loader");
+                    Assert.True(File.Exists(Path.Combine(placed, "BingusSharedLoader-manifest.json")));
+                    Assert.Contains(Directory.GetFiles(placed), p => p.EndsWith(".patch_3"));
+                    Assert.Equal(0L, Plugin.TargetStatus(host)["pending"]);
+
+                    // a folder of ours HellForge no longer lists (it could not read it): deleted when the mod goes
+                    foreach (var p in Directory.GetFiles(placed, "*.patch_*")) File.Delete(p);
+                    File.WriteAllText(Path.Combine(placed, "manifest.json"), "{\"Name\": \"broken\"}");
+                    list.Clear();
+                    var r = Plugin.TargetDeploy(host);
+                    Assert.False(Directory.Exists(placed));
+                    Assert.Contains("1 taken out", (string)r["said"]);
+                }
+                finally { Install.PlacesOverride = null; }
+            }
+        }
+
+        [Fact]
         public void AHellForgeModOfTheLibraryGoesInWhole()
         {
             using (var f = new FakeHellForge())

@@ -245,6 +245,42 @@ namespace HellForge.Tests
         }
 
         [Fact]
+        public void ABuildMadeForHellForgeGoesInAsItIs()
+        {
+            using (var f = new FakeHellForge())
+            {
+                Install.PlacesOverride = () => new[] { f.Install };
+                try
+                {
+                    Plugin.Found(f.Home, true);
+                    var official = Path.Combine(f.Root, "official", "data");
+                    var hfData = Path.Combine(f.Install, "game", "data");
+                    FakeGame(official, new Dictionary<string, byte[]> { ["1111111111111111"] = Patch((0xB, Scan.RenderConfig, Encoding.UTF8.GetBytes("newer render config"))) });
+                    FakeGame(hfData, new Dictionary<string, byte[]> { ["2222222222222222"] = Patch((0xB, Scan.RenderConfig, Encoding.UTF8.GetBytes("older render config!"))) });
+                    var lib = Path.Combine(f.Library, "Holo port_01");
+                    Directory.CreateDirectory(lib);
+                    var src = Path.Combine(lib, "ee6b1ba7e22d71ed.patch_0");
+                    var bytes = Patch((0xB, Scan.RenderConfig, Encoding.UTF8.GetBytes("rebuilt on HellForge's own")));
+                    File.WriteAllBytes(src, bytes);
+                    Func<string, Dictionary<string, object>> host = madeFor => new Dictionary<string, object>
+                    {
+                        ["api"] = 2L, ["home"] = f.Home, ["lang"] = "en", ["data"] = official,
+                        ["mods"] = (Func<List<Dictionary<string, object>>>)(() => new List<Dictionary<string, object>>
+                        {
+                            new Dictionary<string, object> { ["id"] = "port0001", ["name"] = "Holo port", ["path"] = lib, ["for"] = madeFor,
+                                ["files"] = new List<object> { new Dictionary<string, object> { ["src"] = src, ["name"] = "ee6b1ba7e22d71ed.patch_4" } } },
+                        }),
+                    };
+                    Plugin.TargetDeploy(host("hellforge"));
+                    var placed = Path.Combine(f.Mods, "Holo port", "ee6b1ba7e22d71ed.patch_4");
+                    Assert.Equal(bytes, File.ReadAllBytes(placed));                        // its render configuration kept
+                    Assert.Equal("Ready", Deployed.Load(f.Home, f.Install)["port0001"].Level);
+                }
+                finally { Install.PlacesOverride = null; }
+            }
+        }
+
+        [Fact]
         public void WithoutTheOfficialGameNothingIsChanged()
         {
             using (var f = new FakeHellForge())
