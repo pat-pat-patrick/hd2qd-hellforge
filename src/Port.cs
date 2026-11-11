@@ -29,7 +29,8 @@ namespace Hd2Qd.HellForge
 
         public sealed class Step
         {
-            public string File;                     // the patch file, relative to the mod's folder
+            public string File;                     // the patch file, relative to the mod's folder (its name in HellForge's copy)
+            public string Src;                      // where its bytes are read from
             public (ulong Id, ulong Type) Key;
             public string What;                     // "merge", "leave_out"
         }
@@ -129,30 +130,38 @@ namespace Hd2Qd.HellForge
             CheckMany(home, officialData, hellforgeData, new[] { modFolder }, progress)[modFolder];
 
         /// <summary>What each of several mods needs; the two games are read once for all of them.</summary>
-        public static Dictionary<string, Report> CheckMany(string home, string officialData, string hellforgeData, IEnumerable<string> modFolders, Action<double> progress = null)
+        public static Dictionary<string, Report> CheckMany(string home, string officialData, string hellforgeData, IEnumerable<string> modFolders, Action<double> progress = null) =>
+            CheckSets(home, officialData, hellforgeData,
+                      modFolders.Distinct(StringComparer.OrdinalIgnoreCase).ToDictionary(f => f, f => PatchFiles(f).Select(p => (p, p.Substring(f.TrimEnd('\\').Length + 1))).ToList(), StringComparer.OrdinalIgnoreCase),
+                      progress);
+
+        /// <summary>The same for sets of files by a key of the caller's: each file's source and its
+        /// name in HellForge's copy (a deploy target's plan: the options already chosen).</summary>
+        public static Dictionary<string, Report> CheckSets(string home, string officialData, string hellforgeData,
+                                                            Dictionary<string, List<(string Src, string Rel)>> sets, Action<double> progress = null)
         {
             var reports = new Dictionary<string, Report>(StringComparer.OrdinalIgnoreCase);
-            var lists = new Dictionary<string, List<(string Rel, List<(ulong Id, ulong Type)> Keys)>>(StringComparer.OrdinalIgnoreCase);
+            var lists = new Dictionary<string, List<(string Rel, string Src, List<(ulong Id, ulong Type)> Keys)>>(StringComparer.OrdinalIgnoreCase);
             bool official = officialData != null && File.Exists(Path.Combine(officialData, "bundles.nxa"));
-            foreach (var folder in modFolders.Distinct(StringComparer.OrdinalIgnoreCase))
+            foreach (var set in sets)
             {
-                var r = reports[folder] = new Report();
+                var r = reports[set.Key] = new Report();
                 if (!official) { r.Level = Level.Unknown; r.Why = "no_official_game"; continue; }
-                var perFile = new List<(string, List<(ulong, ulong)>)>();
+                var perFile = new List<(string, string, List<(ulong, ulong)>)>();
                 try
                 {
-                    foreach (var f in PatchFiles(folder)) perFile.Add((f.Substring(folder.TrimEnd('\\').Length + 1), KeysOf(f)));
-                    lists[folder] = perFile;
+                    foreach (var (src, rel) in set.Value.Where(x => Main.IsMatch(Path.GetFileName(x.Rel)))) perFile.Add((rel, src, KeysOf(src)));
+                    lists[set.Key] = perFile;
                 }
                 catch (Exception e) when (e is IOException || e is UnauthorizedAccessException) { r.Level = Level.Unknown; r.Why = e.Message; }
             }
-            var all = lists.Values.SelectMany(l => l.SelectMany(p => p.Keys)).Distinct().ToList();
+            var all = lists.Values.SelectMany(l => l.SelectMany(p => p.Item3)).Distinct().ToList();
             if (all.Count == 0) return reports;
             var verdicts = GameIndex.Compare(home, officialData, hellforgeData, all, progress);
             foreach (var kv in lists)
             {
                 var r = reports[kv.Key];
-                foreach (var (rel, keys) in kv.Value)
+                foreach (var (rel, src, keys) in kv.Value)
                     foreach (var k in keys)
                     {
                         r.Resources++;
@@ -167,11 +176,11 @@ namespace Hd2Qd.HellForge
                         }
                         if (LeaveOut.Contains(k.Type) && (v == GameIndex.Verdict.Differs || v == GameIndex.Verdict.Slight))
                         {
-                            r.Steps.Add(new Step { File = rel, Key = k, What = "leave_out" });
+                            r.Steps.Add(new Step { File = rel, Src = src, Key = k, What = "leave_out" });
                             r.LeftOutTypes[k.Type] = r.LeftOutTypes.TryGetValue(k.Type, out var lo) ? lo + 1 : 1;
                         }
                         else if (k.Type == Scan.Strings && (v == GameIndex.Verdict.Differs || v == GameIndex.Verdict.Slight))
-                            r.Steps.Add(new Step { File = rel, Key = k, What = "merge" });
+                            r.Steps.Add(new Step { File = rel, Src = src, Key = k, What = "merge" });
                         else if (v == GameIndex.Verdict.Differs || v == GameIndex.Verdict.Slight)
                             r.KeptDiffering[k.Type] = r.KeptDiffering.TryGetValue(k.Type, out var n) ? n + 1 : 1;
                     }
@@ -197,7 +206,7 @@ namespace Hd2Qd.HellForge
             }
             foreach (var group in r.Steps.GroupBy(s => s.File, StringComparer.OrdinalIgnoreCase))
             {
-                var source = Path.Combine(modFolder, group.Key);
+                var source = group.First().Src ?? Path.Combine(modFolder, group.Key);
                 var target = Path.Combine(dest, group.Key);
                 var main = File.ReadAllBytes(source);
                 var leave = new HashSet<(ulong, ulong)>(group.Where(s => s.What == "leave_out").Select(s => s.Key));

@@ -10,7 +10,7 @@ A plugin of [HD2 Mod Quick Deploy](https://github.com/pat-pat-patrick/hd2-mod-cl
 | Lobbies | While a session runs: every public HellForge lobby on any planet and difficulty (the game's own Quick Play keeps only the same planet and difficulty), what each needs, quick join, and the mods that would let you into more lobbies |
 | Sessions | Start a session, see each step (preparing, waiting for Steam, running, how it ended), end it |
 | Mods | HellForge's own list in its three co-op groups, with the modlist code: switch, reorder, pack options |
-| From the library | Put library mods into HellForge's `mods` folder: hard links on the same drive, so nothing is copied and the library is never written |
+| Deploy target | With a Quick Deploy that has deploy targets, HellForge appears beside Deploy: the main list then is HellForge's own (its own mods on, order and options), and Deploy puts each enabled mod into HellForge's `mods` folder as a folder of its own (hard links on the same drive; the library is never written), in the list's order, switched on; mods turned off are taken out |
 | Made for the official game | Each resource a library mod replaces is compared between the official game and HellForge's older one. The same in both, or the mod's own: used as it is. Text tables: the mod's changed lines carried onto HellForge's table. Render configuration, shader libraries and replaced game Lua scripts: left out. Anything else that differs: used as it is, and named |
 | Only affects me | Mark a code mod `"coop": "per-player"` in HellForge's copy; marked again when an update comes without it |
 | Warnings | A note on a library mod that replaces the render configuration or game text tables built for the official game, or calls Boot Mod Loader's own API |

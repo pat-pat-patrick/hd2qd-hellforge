@@ -22,6 +22,8 @@ namespace HellForge.Tests
         public bool Running;
         public readonly List<string[]> Calls = new List<string[]>();
         public readonly HashSet<string> Disabled = new HashSet<string>();
+        /// <summary>The last mod-order, top first.</summary>
+        public List<string> Order = new List<string>();
 
         public FakeHellForge()
         {
@@ -71,6 +73,10 @@ namespace HellForge.Tests
                     if (m.Archive != null) File.Delete(m.Archive); else Directory.Delete(m.Folder, true);
                     return Ok(new Dictionary<string, object>());
                 }
+                case "mod-order":
+                    if (Running) return Fail("a session is running");
+                    Order = Arg("--ids").Split(',').ToList();
+                    return Ok(new Dictionary<string, object>());
                 case "mod-switch":
                     if (Running) return Fail("a session is running");
                     if (Arg("--on") == "no") Disabled.Add(Arg("--id")); else Disabled.Remove(Arg("--id"));

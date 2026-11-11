@@ -134,9 +134,23 @@ namespace Hd2Qd.HellForge
                 }
                 mine = notesPlaced;
             }
+            var lang = Words.Lang(host);
+            // on the manager's HellForge target: what each deployed mod became there
+            if (host.TryGetValue("target", out var tf) && tf is Func<string> target && target() == "hellforge")
+            {
+                var dep = Deployed.Load(home, install).Values.FirstOrDefault(d => Placed.SamePath(d.Library, modFolder));
+                if (dep == null) return null;
+                var lines = PortLines(lang, dep.Level, dep.Merged, dep.LeftOutTypes, dep.KeptDiffering);
+                var bml = Risks(lang, Scan.Of(modFolder), true);
+                if (lines.Count == 0 && bml.Count == 0) return null;
+                return new Dictionary<string, object>
+                {
+                    ["text"] = Words.Get(lang, dep.Level == Port.Level.Partial.ToString() ? "port_note_partial" : bml.Count > 0 ? "note_risk" : "port_note_adjusted"),
+                    ["tip"] = string.Join("\n", lines.Select(l => l.Text).Concat(bml)), ["colour"] = lines.Any(l => l.Colour == "Yellow") || bml.Count > 0 ? "Yellow" : "Blue",
+                };
+            }
             var entry = Placed.Of(mine, modFolder);
             if (entry == null) return null;
-            var lang = Words.Lang(host);
             bool ported = entry.Level != null && entry.Level != Port.Level.Unknown.ToString();
             var risks = Risks(lang, Scan.Of(modFolder), ported);
             var port = PortLines(lang, entry);

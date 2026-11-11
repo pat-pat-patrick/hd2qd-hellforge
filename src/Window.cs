@@ -66,7 +66,15 @@ namespace Hd2Qd.HellForge
             Dictionary<string, Placed.Entry> placed = new Dictionary<string, Placed.Entry>();
             string readError;
             string tab = "mods";
-            bool busy, reading, adding, creatingProfile, syncedOnce;
+            bool busy, reading, adding, creatingProfile, syncedOnce, playWhenRead;
+            HashSet<string> deployedPacks = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            /// <summary>Quick Deploy's Launch on its HellForge target: a session once the window has read HellForge.</summary>
+            public void PlayWhenRead()
+            {
+                if (!reading && status != null) { Play(); return; }
+                playWhenRead = true;
+            }
 
             // the session started from this window
             CancellationTokenSource playing;
@@ -139,6 +147,7 @@ namespace Hd2Qd.HellForge
                                 var ru = Hf.ParseRuns(Hf.Ask(inst, "logs"));
                                 var la = Hf.Run(inst, "languages");
                                 var langs = la.Ok ? Json.Objs(Json.Obj(la.Out), "languages") : new List<Dictionary<string, object>>();
+                                deployedPacks = new HashSet<string>(Deployed.Load(home, inst).Values.Select(d => d.PackId).Where(x => x != null), StringComparer.OrdinalIgnoreCase);
                                 return (m, st, pr, ru, langs, Placed.Load(home, inst), (string)null);
                             }
                             catch (Exception e) when (e is HfError || e is IOException || e is UnauthorizedAccessException)
@@ -154,6 +163,7 @@ namespace Hd2Qd.HellForge
                 finally { reading = false; }
                 Render();
                 if (install != null) poll.Start();
+                if (playWhenRead) { playWhenRead = false; Play(); }
             }
 
             /// <summary>Every 3 s while the window is open: whether a session started or ended
@@ -283,12 +293,7 @@ namespace Hd2Qd.HellForge
 
                 RenderAllOnlyMe();
 
-                var actions = Row();
-                var add = Btn(adding ? T("add_close") : T("add_from_library"), false, () => { adding = !adding; Render(); });
-                add.IsEnabled = !Locked;
-                actions.Children.Add(add);
-                body.Children.Add(actions);
-                if (adding) RenderAdd();
+                body.Children.Add(Small(T("manage_in_manager"), new Thickness(0, 6, 0, 4)));
 
                 var shown = mods.Mods.Where(m => !m.Hidden).ToList();
                 foreach (var (group, title, hint) in new[]
@@ -358,7 +363,9 @@ namespace Hd2Qd.HellForge
                 g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
                 void Cell(int col, UIElement e) { Grid.SetColumn(e, col); g.Children.Add(e); }
 
-                var sw = new CheckBox { Style = S("Switch"), IsChecked = m.Enabled, VerticalAlignment = VerticalAlignment.Center, IsEnabled = !Locked && !m.Has("local-stats"), ToolTip = m.Enabled ? T("switch_off") : T("switch_on") };
+                bool managed = deployedPacks.Contains(m.Id);
+                var sw = new CheckBox { Style = S("Switch"), IsChecked = m.Enabled, VerticalAlignment = VerticalAlignment.Center, IsEnabled = !Locked && !m.Has("local-stats") && !managed,
+                                        ToolTip = managed ? T("managed") : m.Enabled ? T("switch_off") : T("switch_on") };
                 sw.Click += (s, e) => Change(() => Hf.Run(install, "mod-switch", "--id", m.Id, "--on", sw.IsChecked == true ? "yes" : "no"));
                 Cell(0, sw);
 
@@ -369,7 +376,7 @@ namespace Hd2Qd.HellForge
                 names.Children.Add(title);
                 var marks = new List<string>();
                 var mine = PlacedOf(m);
-                if (mine != null) marks.Add(T("mark_library"));
+                if (mine != null || managed) marks.Add(T("mark_library"));
                 if (m.Has("bundled")) marks.Add(T("mark_bundled"));
                 if (m.Has("lua")) marks.Add("LUA");
                 if (m.Has("code")) marks.Add(T("mark_code"));
@@ -383,7 +390,7 @@ namespace Hd2Qd.HellForge
                     foreach (var r in Risks(lang, Scan.Of(mine.Library ?? ""), ported))
                         names.Children.Add(new TextBlock { Text = r, FontSize = 12, Foreground = B("Yellow"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 2, 0, 0) });
                 }
-                if (m.Options.Count > 1 || m.Options.Any(o => o.Variants.Count > 0)) names.Children.Add(Options(m));
+                if (!managed && (m.Options.Count > 1 || m.Options.Any(o => o.Variants.Count > 0))) names.Children.Add(Options(m));
                 Cell(1, names);
 
                 if (Coop.Applies(m))
@@ -397,8 +404,8 @@ namespace Hd2Qd.HellForge
                 }
 
                 var order = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
-                order.Children.Add(Glyph("", T("move_up"), above != null && !Locked, () => Move(m, above)));
-                order.Children.Add(Glyph("", T("move_down"), below != null && !Locked, () => Move(below, m)));
+                order.Children.Add(Glyph("", T("move_up"), above != null && !Locked && !managed && !deployedPacks.Contains(above.Id), () => Move(m, above)));
+                order.Children.Add(Glyph("", T("move_down"), below != null && !Locked && !managed && !deployedPacks.Contains(below.Id), () => Move(below, m)));
                 Cell(3, order);
 
                 if (mine != null)

@@ -1,0 +1,147 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using Hd2Qd.HellForge;
+using Xunit;
+
+namespace HellForge.Tests
+{
+    /// <summary>HellForge as the manager's deploy target: the manager hands the list in use as
+    /// host["mods"] (PluginHost.Mods: each enabled mod {id, name, path, files [{src, name}]}).</summary>
+    public class TargetTests
+    {
+        static Dictionary<string, object> Host(FakeHellForge f, Func<List<Dictionary<string, object>>> mods) => new Dictionary<string, object>
+        {
+            ["api"] = 2L, ["home"] = f.Home, ["lang"] = "en", ["data"] = null, ["mods"] = mods, ["target"] = (Func<string>)(() => "hellforge"),
+        };
+
+        /// <summary>A library mod and the files a deploy of it would put in the game, named as there.</summary>
+        static Dictionary<string, object> Mod(FakeHellForge f, string id, string name, int patches, string guid = null)
+        {
+            var dir = Path.Combine(f.Library, name + "_" + id);
+            Directory.CreateDirectory(Path.Combine(dir, "A"));
+            if (guid != null) File.WriteAllText(Path.Combine(dir, "manifest.json"), "{\"Guid\": \"" + guid + "\", \"Name\": \"" + name + "\", \"Options\": [{\"Name\": \"A\", \"Include\": [\"A\"]}]}");
+            var files = new List<object>();
+            for (int i = 0; i < patches; i++)
+            {
+                var src = Path.Combine(dir, "A", "0123456789abcde" + i + ".patch_0");
+                if (!File.Exists(src)) File.WriteAllBytes(src, FakeHellForge.Patch());
+                files.Add(new Dictionary<string, object> { ["src"] = src, ["name"] = "0123456789abcde" + i + ".patch_" + (i + 3) });
+            }
+            return new Dictionary<string, object> { ["id"] = id, ["name"] = name, ["path"] = dir, ["files"] = files };
+        }
+
+        [Fact]
+        public void TheListInUseIsDeployedIntoHellForge()
+        {
+            using (var f = new FakeHellForge())
+            {
+                Install.PlacesOverride = () => new[] { f.Install };
+                try
+                {
+                    Plugin.Found(f.Home, true);
+                    var a = Mod(f, "aaaa1111", "First", 2, "11111111-aaaa-1111-aaaa-111111111111");
+                    var b = Mod(f, "bbbb2222", "Second", 1);
+                    var list = new List<Dictionary<string, object>> { a, b };
+                    var host = Host(f, () => list);
+
+                    var t = Plugin.Target(host);
+                    Assert.Equal("hellforge", t["id"]);
+                    Assert.True((bool)t["found"]);
+                    Assert.Equal(2L, Plugin.TargetStatus(host)["pending"]);
+
+                    var r = Plugin.TargetDeploy(host);
+                    Assert.Empty((List<object>)r["refused"]);
+                    var mods = Hf.ReadMods(f.Install).Mods;
+                    var packA = "pack." + Deployed.GuidOf("aaaa1111");
+                    var packB = "pack." + Deployed.GuidOf("bbbb2222");
+                    Assert.Contains(mods, m => m.Id == packA && m.Name == "First");
+                    Assert.Contains(mods, m => m.Id == packB);
+                    // each file at the folder's top under its name in the game, a hard link to the library's
+                    var placed = Path.Combine(f.Mods, "First", "0123456789abcde1.patch_4");
+                    Assert.True(File.Exists(placed));
+                    Assert.Equal(2, FakeHellForge.Links(placed));
+                    // the manager's last mod wins; HellForge's top one does
+                    Assert.Equal(new[] { packB, packA }, f.Order);
+                    Assert.Equal(0L, Plugin.TargetStatus(host)["pending"]);
+                    Assert.Empty(Directory.GetDirectories(f.Mods, ".hd2qd-*"));
+
+                    // the same list again: nothing placed again
+                    r = Plugin.TargetDeploy(host);
+                    Assert.Contains("0 placed, 2 as they were", (string)r["said"]);
+
+                    // a switched off in HellForge.exe comes back on; b off in the manager goes out
+                    f.Disabled.Add(packA);
+                    list.Remove(b);
+                    Assert.Equal(1L, Plugin.TargetStatus(host)["pending"]);
+                    r = Plugin.TargetDeploy(host);
+                    Assert.Contains("1 taken out", (string)r["said"]);
+                    mods = Hf.ReadMods(f.Install).Mods;
+                    Assert.DoesNotContain(mods, m => m.Id == packB);
+                    Assert.True(mods.Single(m => m.Id == packA).Enabled);
+                    Assert.True(Directory.Exists(Path.Combine(f.Library, "Second_bbbb2222")));   // the library is not touched
+
+                    // a library file replaced (an update): placed again
+                    var src = Path.Combine(f.Library, "First_aaaa1111", "A", "0123456789abcde0.patch_0");
+                    File.Delete(src);
+                    File.WriteAllBytes(src, FakeHellForge.Patch((Scan.Lua, new byte[] { 1, 2, 3 })));
+                    Assert.Equal(1L, Plugin.TargetStatus(host)["pending"]);
+                    Plugin.TargetDeploy(host);
+                    Assert.Equal(File.ReadAllBytes(src), File.ReadAllBytes(Path.Combine(f.Mods, "First", "0123456789abcde0.patch_3")));
+
+                    // purge: everything it put there taken out, nothing else
+                    var own = f.CodeFolder("someone.own", "Own Mod");
+                    Assert.Contains("1 mod taken out", Plugin.TargetPurge(host));
+                    Assert.False(Directory.Exists(Path.Combine(f.Mods, "First")));
+                    Assert.True(Directory.Exists(own));
+                }
+                finally { Install.PlacesOverride = null; }
+            }
+        }
+
+        [Fact]
+        public void AModHellForgeHasFromElsewhereIsNotDeployedOverIt()
+        {
+            using (var f = new FakeHellForge())
+            {
+                Install.PlacesOverride = () => new[] { f.Install };
+                try
+                {
+                    Plugin.Found(f.Home, true);
+                    const string guid = "22222222-bbbb-2222-bbbb-222222222222";
+                    var hand = Path.Combine(f.Mods, "Super Holo HUD v1.226.1 port");
+                    Directory.CreateDirectory(hand);
+                    File.WriteAllText(Path.Combine(hand, "manifest.json"), "{\"Guid\": \"" + guid + "\", \"Name\": \"SHH port\"}");
+                    var list = new List<Dictionary<string, object>> { Mod(f, "cccc3333", "Super Holo HUD", 1, guid) };
+                    var r = Plugin.TargetDeploy(Host(f, () => list));
+                    var refused = ((List<object>)r["refused"]).Cast<string>().ToList();
+                    Assert.Single(refused);
+                    Assert.Contains("SHH port", refused[0]);
+                    Assert.False(Directory.Exists(Path.Combine(f.Mods, "Super Holo HUD")));
+                    Assert.True(File.Exists(Path.Combine(hand, "manifest.json")));
+                }
+                finally { Install.PlacesOverride = null; }
+            }
+        }
+
+        [Fact]
+        public void ADeployIsRefusedWhileASessionRuns()
+        {
+            using (var f = new FakeHellForge())
+            {
+                Install.PlacesOverride = () => new[] { f.Install };
+                try
+                {
+                    Plugin.Found(f.Home, true);
+                    var list = new List<Dictionary<string, object>> { Mod(f, "dddd4444", "Any", 1) };
+                    f.Running = true;
+                    Assert.Throws<HfError>(() => Plugin.TargetDeploy(Host(f, () => list)));
+                    Assert.True((bool)Plugin.TargetStatus(Host(f, () => list))["running"]);
+                    Assert.Empty(Directory.GetDirectories(f.Mods));
+                }
+                finally { Install.PlacesOverride = null; }
+            }
+        }
+    }
+}
