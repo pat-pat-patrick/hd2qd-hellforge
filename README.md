@@ -7,6 +7,7 @@ A plugin of [HD2 Mod Quick Deploy](https://github.com/pat-pat-patrick/hd2-mod-cl
 
 | | |
 |---|---|
+| Lobbies | While a session runs: every public HellForge lobby on any planet and difficulty (the game's own Quick Play keeps only the same planet and difficulty), what each needs, quick join, and the mods that would let you into more lobbies |
 | Sessions | Start a session, see each step (preparing, waiting for Steam, running, how it ended), end it |
 | Mods | HellForge's own list in its three co-op groups, with the modlist code: switch, reorder, pack options |
 | From the library | Put library mods into HellForge's `mods` folder: hard links on the same drive, so nothing is copied and the library is never written |

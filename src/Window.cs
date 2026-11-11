@@ -53,6 +53,7 @@ namespace Hd2Qd.HellForge
             readonly StackPanel tabs = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 14, 0, 0) };
             readonly StackPanel body = new StackPanel();
             readonly DispatcherTimer poll = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
+            readonly DispatcherTimer lobbyPoll = new DispatcherTimer { Interval = TimeSpan.FromSeconds(4) };
 
             string install;
             Hf.Status status;
@@ -83,11 +84,14 @@ namespace Hd2Qd.HellForge
                 Root.Children.Add(top);
                 Root.Children.Add(new ScrollViewer { Content = body, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Margin = new Thickness(0, 14, 0, 0) });
                 poll.Tick += (s, e) => Poll();
+                lobbyPoll.Tick += (s, e) => { if (tab == "lobbies" && RunNow != null) RefreshLobbies(); };
+                lobbyPoll.Start();
             }
 
             public void Close()
             {
                 poll.Stop();
+                lobbyPoll.Stop();
                 playing?.Cancel();
             }
 
@@ -97,6 +101,11 @@ namespace Hd2Qd.HellForge
             string T(string key, params object[] args) => Words.F(lang, key, args);
 
             bool Locked => status != null && status.Running || playing != null;
+
+            /// <summary>The run folder of the session going on (the one started here, else the one
+            /// status says runs), or null.</summary>
+            string RunNow => playing != null ? playRun : status != null && status.Running ? status.LastRun : null;
+            string playRun;
 
             // ---------------------------------------------------------------- reading
 
@@ -177,6 +186,7 @@ namespace Hd2Qd.HellForge
                 {
                     case "settings": RenderSettings(); break;
                     case "logs": RenderLogs(); break;
+                    case "lobbies": RenderLobbies(); break;
                     default: RenderMods(); break;
                 }
             }
@@ -228,10 +238,10 @@ namespace Hd2Qd.HellForge
             {
                 tabs.Children.Clear();
                 if (install == null || status == null || !status.GameCopy) return;
-                foreach (var (key, text) in new[] { ("mods", T("tab_mods")), ("settings", T("tab_settings")), ("logs", T("tab_logs")) })
+                foreach (var (key, text) in new[] { ("mods", T("tab_mods")), ("lobbies", T("tab_lobbies")), ("settings", T("tab_settings")), ("logs", T("tab_logs")) })
                 {
                     var rb = new RadioButton { Content = text, Style = S("Segment"), IsChecked = tab == key, GroupName = "hftab" };
-                    rb.Checked += (s, e) => { if (tab != key) { tab = key; Render(); } };
+                    rb.Checked += (s, e) => { if (tab != key) { tab = key; Render(); if (key == "lobbies" && RunNow != null) RefreshLobbies(); } };
                     tabs.Children.Add(rb);
                 }
             }
@@ -718,6 +728,218 @@ namespace Hd2Qd.HellForge
                 if (!string.IsNullOrEmpty(hint)) body.Children.Add(Small(hint, new Thickness(0, 2, 0, 6)));
             }
 
+            // ---------------------------------------------------------------- lobbies
+
+            Lobbies.Listing lobbies;
+            string lobbySignature, lobbyError, lobbyNote;
+            bool lobbyReading;
+
+            /// <summary>The lobby list read again (the API searches at most every 2 s; this asks
+            /// every 4 s while the tab is shown). Drawn again only when it changed.</summary>
+            async void RefreshLobbies()
+            {
+                if (lobbyReading) return;
+                var run = RunNow;
+                var backend = Lobbies.BackendUrl(run);
+                if (backend == null)
+                {
+                    if (lobbyError != T("lobbies_starting")) { lobbyError = T("lobbies_starting"); lobbies = null; if (tab == "lobbies") Render(); }
+                    return;
+                }
+                lobbyReading = true;
+                Lobbies.Listing got = null;
+                string error = null;
+                try { got = await Task.Run(() => Lobbies.List(backend)); }
+                catch (HfError e) { error = e.Message; }
+                finally { lobbyReading = false; }
+                var signature = got == null ? "error:" + error
+                    : Json.Write(new object[] { got.Available, got.Reason, got.Lobbies.Select(l => l.Id + l.Verdict + l.Members + l.Reason + l.InMission + l.PlanetId + l.Difficulty).ToArray(), got.Needed.Select(n => n.Id + n.Lobbies).ToArray() });
+                if (got != null) lobbies = got;
+                lobbyError = error;
+                if (signature != lobbySignature && tab == "lobbies") { lobbySignature = signature; Render(); }
+            }
+
+            void RenderLobbies()
+            {
+                var run = RunNow;
+                if (run == null)
+                {
+                    body.Children.Add(Para(T("lobbies_need_session")));
+                    body.Children.Add(Small(T("lobbies_game_filter"), new Thickness(0, 0, 0, 8)));
+                    return;
+                }
+                if (lobbies == null)
+                {
+                    body.Children.Add(Para(lobbyError ?? T("reading")));
+                    return;
+                }
+                if (lobbyError != null) body.Children.Add(Line(T("lobbies_error", lobbyError), "Yellow"));
+                if (!lobbies.Available)
+                {
+                    body.Children.Add(Line(T("lobbies_unavailable", lobbies.Reason ?? ""), "Yellow"));
+                    return;
+                }
+                int now = lobbies.Lobbies.Count(l => l.Joinable);
+                var top = new DockPanel { Margin = new Thickness(0, 0, 0, 4) };
+                var buttons = new StackPanel { Orientation = Orientation.Horizontal };
+                var quick = Btn(T("quick_join"), true, QuickJoin);
+                quick.IsEnabled = now > 0;
+                quick.ToolTip = T("quick_join_tip");
+                buttons.Children.Add(quick);
+                buttons.Children.Add(Btn(T("refresh"), false, () => { lobbySignature = null; RefreshLobbies(); }));
+                DockPanel.SetDock(buttons, Dock.Right);
+                top.Children.Add(buttons);
+                top.Children.Add(new TextBlock { Text = T("lobbies_count", lobbies.Lobbies.Count, now), FontSize = 15, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center, TextWrapping = TextWrapping.Wrap });
+                body.Children.Add(top);
+                body.Children.Add(Small(T("lobbies_game_filter"), new Thickness(0, 2, 0, 8)));
+                if (lobbyNote != null) body.Children.Add(Line(lobbyNote, "Blue"));
+
+                if (lobbies.Needed.Count > 0)
+                {
+                    Section(T("needed"), T("needed_hint"));
+                    foreach (var n in lobbies.Needed)
+                    {
+                        var row = new DockPanel { Margin = new Thickness(0, 2, 0, 2), MaxWidth = 860, HorizontalAlignment = HorizontalAlignment.Left };
+                        var link = WebLink(n.Url);
+                        if (link != null)
+                        {
+                            var open = Btn(T("open_page"), false, () => OpenWeb(link));
+                            open.ToolTip = link;
+                            DockPanel.SetDock(open, Dock.Right);
+                            row.Children.Add(open);
+                        }
+                        row.Children.Add(new TextBlock
+                        {
+                            Text = (n.Name ?? n.Id) + (n.Versions.Count > 0 ? "  " + string.Join(", ", n.Versions) : "") + "  ·  " + T("needed_by", n.Lobbies),
+                            VerticalAlignment = VerticalAlignment.Center, TextWrapping = TextWrapping.Wrap,
+                        });
+                        body.Children.Add(row);
+                    }
+                }
+
+                if (lobbies.Lobbies.Count == 0) { body.Children.Add(Para(T("lobbies_none"))); return; }
+                Section(T("lobbies"), null);
+                foreach (var l in lobbies.Lobbies) body.Children.Add(LobbyRow(l));
+            }
+
+            FrameworkElement LobbyRow(Lobbies.Lobby l)
+            {
+                var g = new DockPanel { MinHeight = 56, Margin = new Thickness(0, 4, 0, 4) };
+                if (l.Joinable)
+                {
+                    var join = Btn(T("join"), true, () => Join(l));
+                    join.VerticalAlignment = VerticalAlignment.Center;
+                    DockPanel.SetDock(join, Dock.Right);
+                    g.Children.Add(join);
+                }
+                var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+                var title = new TextBlock { FontSize = 14, TextWrapping = TextWrapping.Wrap };
+                title.Inlines.Add(new System.Windows.Documents.Run(l.HostName ?? T("unknown_host")) { FontWeight = FontWeights.SemiBold });
+                var facts = new List<string>();
+                if (l.Friend) facts.Add(T("lobby_friend"));
+                facts.Add(T("lobby_members", l.Members, l.MaxMembers));
+                var race = Lobbies.RaceKey(l.Race);
+                if (race != null) facts.Add(T(race));
+                if (l.PlanetId != null) facts.Add(T("lobby_planet", l.PlanetId));
+                if (l.Difficulty != null) facts.Add(T("lobby_difficulty", l.Difficulty));
+                facts.Add(l.InMission ? T("lobby_in_mission") : T("lobby_on_ship"));
+                if (l.Older) facts.Add(T("lobby_older"));
+                title.Inlines.Add(new System.Windows.Documents.Run("   " + string.Join("  ·  ", facts)) { Foreground = B("Muted"), FontSize = 12 });
+                text.Children.Add(title);
+                var (verdict, colour) = Verdict(l);
+                var line = new TextBlock { FontSize = 12, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 3, 0, 0) };
+                line.Inlines.Add(new System.Windows.Documents.Run(verdict) { Foreground = B(colour), FontWeight = FontWeights.SemiBold });
+                if (!string.IsNullOrEmpty(l.Reason)) line.Inlines.Add(new System.Windows.Documents.Run("   " + l.Reason) { Foreground = B("Muted") });
+                text.Children.Add(line);
+                if (l.Fix == "strangers")
+                {
+                    var fix = Btn(T("fix_strangers"), false, () =>
+                    {
+                        if (Ask(T("strangers_ask"), T("strangers_on"))) Change(() => Hf.Run(install, "settings", "--strangers", "yes"));
+                    });
+                    fix.HorizontalAlignment = HorizontalAlignment.Left;
+                    fix.Margin = new Thickness(-8, 6, 0, 0);
+                    text.Children.Add(fix);
+                }
+                else if (l.Fix == "editedStats") text.Children.Add(Small(T("fix_edited_stats"), new Thickness(0, 3, 0, 0)));
+                var mods = l.Mods.Where(m => m.Tier == "shared" && m.Action != null && m.Action != "have").ToList();
+                foreach (var m in mods.Take(6))
+                    text.Children.Add(Small((m.Name ?? m.Id) + (string.IsNullOrEmpty(m.Version) ? "" : " " + m.Version) + ":  " + ActionText(m), new Thickness(0, 2, 0, 0)));
+                if (mods.Count > 6) text.Children.Add(Small(T("lobby_more_mods", mods.Count - 6), new Thickness(0, 2, 0, 0)));
+                g.Children.Add(text);
+                return new Border { Child = g, BorderBrush = B("Grid"), BorderThickness = new Thickness(0, 0, 0, 1), Padding = new Thickness(0, 2, 0, 6) };
+            }
+
+            (string, string) Verdict(Lobbies.Lobby l)
+            {
+                switch (l.Verdict)
+                {
+                    case "ready": return (T("verdict_ready"), "Blue");
+                    case "download": return (T("verdict_download", Lobbies.Size(l.DownloadBytes)), "Blue");
+                    case "trust": return (T("verdict_trust"), "Yellow");
+                    case "full": return (T("verdict_full"), "Muted");
+                    case "locked": return (T("verdict_locked"), "Muted");
+                    case "blocked": return (T("verdict_blocked"), "Muted");
+                    case "unknown": return (T("verdict_unknown"), "Muted");
+                    case "unjoinable": return (T("verdict_unjoinable"), "Red");
+                    default: return (l.Verdict ?? "", "Muted");
+                }
+            }
+
+            string ActionText(Lobbies.Mod m)
+            {
+                var t = T("action_" + (m.Action ?? ""));
+                if (t.StartsWith("action_")) t = m.Action;
+                return string.IsNullOrEmpty(m.Why) ? t : t + " (" + m.Why + ")";
+            }
+
+            async void Join(Lobbies.Lobby l)
+            {
+                var backend = Lobbies.BackendUrl(RunNow);
+                if (backend == null) return;
+                var a = await Task.Run(() => Lobbies.Join(backend, l.Id));
+                Invited(a, l.HostName);
+            }
+
+            async void QuickJoin()
+            {
+                var backend = Lobbies.BackendUrl(RunNow);
+                if (backend == null) return;
+                var a = await Task.Run(() => Lobbies.Quick(backend));
+                Invited(a, Json.Str(a.Json, "hostName"));
+            }
+
+            void Invited(Lobbies.Answer a, string host)
+            {
+                if (a.Code == 202)
+                {
+                    lobbyNote = T("invited", host ?? T("unknown_host"));
+                    Foot(lobbyNote);
+                    lobbySignature = null;
+                    Render();
+                    return;
+                }
+                switch (a.Error)
+                {
+                    case "HELLFORGE_LOBBY_UNKNOWN": Tell(T("lobby_gone")); break;
+                    case "HELLFORGE_NO_JOINABLE_LOBBY": Tell(T("no_joinable")); break;
+                    case "HELLFORGE_MULTIPLAYER_OFF": Tell(T("multiplayer_off")); break;
+                    default: Tell(T("refused", a.Message ?? a.Error ?? ("HTTP " + a.Code))); break;
+                }
+                lobbySignature = null;
+                RefreshLobbies();
+            }
+
+            static string WebLink(string url) => Lobbies.WebLink(url);
+
+            void OpenWeb(string url)
+            {
+                if (WebLink(url) == null) return;
+                if (!Ask(T("open_page_ask", url), T("open_page"))) return;
+                try { Process.Start(new ProcessStartInfo(url) { UseShellExecute = true }); }
+                catch (Exception e) when (e is System.ComponentModel.Win32Exception || e is InvalidOperationException) { Tell(e.Message); }
+            }
+
             // ---------------------------------------------------------------- logs
 
             void RenderLogs()
@@ -848,7 +1070,7 @@ namespace Hd2Qd.HellForge
                 var st = Json.Str(d, "status");
                 switch (ev)
                 {
-                    case "started": playLine = T("play_started"); break;
+                    case "started": playLine = T("play_started"); playRun = Json.Str(d, "run"); break;
                     case "mod-problems":
                         foreach (var p in Json.List(d, "problems"))
                             playProblems.Add(p is string s ? s : p is Dictionary<string, object> o ? (Json.Str(o, "message") ?? Json.Str(o, "why") ?? Json.Write(o)) : Convert.ToString(p));
