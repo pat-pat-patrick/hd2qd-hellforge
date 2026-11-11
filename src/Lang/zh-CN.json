@@ -28,6 +28,8 @@
   "play_no_bingus_ask": "已启用 LUA MOD，但未启用 Bingus Shared Loader，HellForge 将不会运行这些 MOD。是否继续启动？",
   "play_risky_ask": "以下 MOD 在 HellForge 的游戏版本上存在已知问题：\n{0}\n\n是否继续启动？",
   "status_preparing": "准备中：正在编译 MOD 并检查游戏副本",
+  "status_preparing_tools": "准备中：首次编译 MOD，HellForge 正在下载编译工具（Zig），可能需要几分钟",
+  "status_preparing_mod": "准备中：正在编译“{0}”（已完成 {1}/{2}）",
   "status_awaiting_network_block_install": "等待安装网络拦截（请确认 Windows 提示）",
   "status_awaiting_windows_firewall_consent": "等待防火墙规则（请确认 Windows 提示）",
   "status_awaiting_steam_broker": "等待 Steam（最多 60 秒）",

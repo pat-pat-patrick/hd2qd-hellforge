@@ -188,14 +188,14 @@ namespace Hd2Qd.HellForge
         }
 
         /// <summary>With the setting on: each shared gameplay code mod not marked yet, marked.</summary>
-        public static (List<string> Marked, List<string> Refused) MarkAll(string home, string install)
+        public static (List<string> Marked, List<string> Refused) MarkAll(string home, string install, Hf.ModList known = null)
         {
             var marked = new List<string>();
             var refusedNow = new List<string>();
             if (!AllOn(home)) return (marked, refusedNow);
             var refused = Refused(home);
             var made = Made(home);
-            var list = Hf.ReadMods(install);
+            var list = known ?? Hf.ReadMods(install);              // the deploy's list when it has one
             foreach (var m in list.Mods.Where(x => x.Group == "gameplay" && Applies(x) && !refused.ContainsKey(Key(x))).ToList())
             {
                 Set(home, install, m, true);

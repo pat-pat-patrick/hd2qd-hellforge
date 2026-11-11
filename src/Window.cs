@@ -114,6 +114,12 @@ namespace Hd2Qd.HellForge
             /// status says runs), or null.</summary>
             string RunNow => playing != null ? playRun : status != null && status.Running ? status.LastRun : null;
             string playRun;
+            /// <summary>The session's last status ("preparing", "observing", ...), from play's lines.</summary>
+            string playStatus;
+            /// <summary>While the session prepares: HellForge's build progress (its run folder's
+            /// mod-builds.json), so a long first build says what it does (the user, 2026-11-12: the
+            /// first code mod's start took 3 minutes, Zig downloaded, and nothing said so).</summary>
+            readonly DispatcherTimer buildPoll = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
 
             // ---------------------------------------------------------------- reading
 
@@ -1072,6 +1078,10 @@ namespace Hd2Qd.HellForge
 
             async void StartPlay()
             {
+                playStatus = null;
+                buildPoll.Tick -= BuildTick;
+                buildPoll.Tick += BuildTick;
+                buildPoll.Start();
                 playing = new CancellationTokenSource();
                 stopAsked = false;
                 playProblems.Clear();
@@ -1089,6 +1099,7 @@ namespace Hd2Qd.HellForge
                     playLine = T("refused", e.Message);
                 }
                 await Task.Delay(200);           // the last lines go through the dispatcher first
+                buildPoll.Stop();
                 playing = null;
                 stopAsked = false;
                 Read();
@@ -1112,8 +1123,32 @@ namespace Hd2Qd.HellForge
                     case "error": playLine = T("refused", Json.Str(d, "why") ?? ""); break;
                     default:
                         if (st != null) playLine = StatusText(st) + (Json.Str(d, "failure") is string f && f.Length > 0 ? ": " + f : "");
+                        if (st != null) playStatus = st;
                         break;
                 }
+                RenderHead();
+            }
+
+            void BuildTick(object sender, EventArgs e)
+            {
+                if (playStatus != "preparing" || playRun == null) return;
+                Dictionary<string, object> b;
+                try
+                {
+                    var p = System.IO.Path.Combine(playRun, "mod-builds.json");
+                    if (!File.Exists(p)) return;
+                    b = Json.Obj(File.ReadAllText(p));
+                }
+                catch (Exception x) when (x is IOException || x is UnauthorizedAccessException) { return; }
+                if (b == null) return;
+                var stage = Json.Str(b, "stage");
+                string line =
+                    stage == "tools" ? T("status_preparing_tools")
+                    : stage != "done" && Json.Long(b, "total") > 0 && Json.Str(b, "mod") is string mod && mod.Length > 0
+                        ? T("status_preparing_mod", mod, Json.Long(b, "done"), Json.Long(b, "total"))
+                    : null;
+                if (line == null || line == playLine) return;
+                playLine = line;
                 RenderHead();
             }
 

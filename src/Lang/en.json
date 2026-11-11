@@ -29,6 +29,8 @@
   "play_no_bingus_ask": "LUA mods are enabled, but Bingus Shared Loader is not. HellForge does not run LUA mods without it. Start the game anyway?",
   "play_risky_ask": "The following library mods have known problems on HellForge's game version:\n{0}\n\nStart the game anyway?",
   "status_preparing": "Preparing: compiling mods and verifying the game copy",
+  "status_preparing_tools": "Preparing: the first mod build; HellForge is downloading its compiler (Zig), which can take a few minutes",
+  "status_preparing_mod": "Preparing: compiling \"{0}\" ({1} of {2} done)",
   "status_awaiting_network_block_install": "Waiting for the network block to be installed (confirm the Windows prompt)",
   "status_awaiting_windows_firewall_consent": "Waiting for the firewall rules (confirm the Windows prompt)",
   "status_awaiting_steam_broker": "Waiting for Steam (at most 60 seconds)",

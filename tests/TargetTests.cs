@@ -186,7 +186,7 @@ namespace HellForge.Tests
                     Assert.Equal(2, FakeHellForge.Links(Path.Combine(placed, "hellforge-mod.json")));
                     Assert.False(File.Exists(Path.Combine(placed, "manifest.json")));       // its own id, not a pack's
                     Assert.Contains(Hf.ReadMods(f.Install).Mods, m => m.Id == "someone.native" && m.Group == "gameplay");
-                    Assert.Equal(new[] { "someone.native" }, f.Order);
+                    Assert.Empty(f.Order);                                                  // one mod: HellForge's order is ours already, not set again
                     Assert.Equal(0L, Plugin.TargetStatus(host)["pending"]);
 
                     // every gameplay mod only affects me: put on again after a deploy, never in the library's file

@@ -82,9 +82,10 @@ namespace Hd2Qd.HellForge
             var r = Deployed.Run(home, install, Data(host), Mods(host), lang);
             try
             {
-                var list = Hf.ReadMods(install);
-                Coop.Reapply(home, install, list);
-                foreach (var refused in Coop.MarkAll(home, install).Refused) r.Refused.Add(refused);
+                var list = r.List ?? Hf.ReadMods(install);
+                var again = Coop.Reapply(home, install, list);
+                foreach (var refused in Coop.MarkAll(home, install, again.Count > 0 ? null : list).Refused) r.Refused.Add(refused);
+                r.Step("co-op marks");
             }
             catch (Exception e) when (e is HfError || e is IOException || e is UnauthorizedAccessException) { r.Refused.Add(e.Message); }
             notesAt = DateTime.MinValue;
@@ -92,6 +93,8 @@ namespace Hd2Qd.HellForge
             {
                 ["said"] = Words.F(lang, "target_said", r.Mods, r.Placed, r.Kept, r.Removed),
                 ["refused"] = r.Refused.Cast<object>().ToList(),
+                // for the manager's log: what took the time
+                ["log"] = string.Join(", ", r.Steps),
             };
         }
 
@@ -180,6 +183,17 @@ namespace Hd2Qd.HellForge
         {
             public int Mods, Placed, Kept, Removed;
             public List<string> Refused = new List<string>();
+            /// <summary>HellForge's mod list after the deploy placed and removed (its order and
+            /// switches aside): the co-op marks are read from it, not read again.</summary>
+            public Hf.ModList List;
+            /// <summary>Each step and its time, for the manager's log ("read 1.4 s, ...").</summary>
+            public List<string> Steps = new List<string>();
+            readonly System.Diagnostics.Stopwatch clock = System.Diagnostics.Stopwatch.StartNew();
+            public void Step(string what)
+            {
+                Steps.Add(what + " " + clock.Elapsed.TotalSeconds.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture) + " s");
+                clock.Restart();
+            }
         }
 
         static string RecordFile(string home) => System.IO.Path.Combine(home, "hellforge", "deployed.json");
@@ -329,7 +343,11 @@ namespace Hd2Qd.HellForge
             var mods = Install.Mods(install);
             var mine = Load(home, install);
             var games = Games(officialData, install);
+            res.Step("games compared");
+            // HellForge's mods command reads every mod (1.45 s on 39 mods, 2026-11-12): read once
+            // here, and again only when this deploy placed or removed one
             var list = Hf.ReadMods(install);
+            res.Step("HellForge's list read");
             var placedByHand = Placed.Load(home, install);                 // the plugin window's "add from the library", before this target
             var ours = new HashSet<string>(mine.Values.Select(e => e.PackId).Where(x => x != null), StringComparer.OrdinalIgnoreCase);
 
@@ -350,10 +368,12 @@ namespace Hd2Qd.HellForge
                 { res.Kept++; continue; }
                 toPlace.Add(w);
             }
+            res.Step("unchanged found (" + res.Kept + ")");
             var hfData = HfData(install);
             var reports = toPlace.Count > 0 && games != "none"
                 ? Port.CheckSets(home, officialData, hfData, toPlace.Where(w => !w.Whole && !w.MadeForHellForge).ToDictionary(w => w.Id, w => w.Files.Select(f => (f.Src, f.Name)).ToList(), StringComparer.OrdinalIgnoreCase))
                 : new Dictionary<string, Port.Report>();
+            if (toPlace.Count > 0) res.Step("compared for HellForge's game (" + toPlace.Count + ")");
             foreach (var w in toPlace)
             {
                 try
@@ -391,22 +411,29 @@ namespace Hd2Qd.HellForge
                 res.Removed++;
             }
             Save(home, install, mine);
+            if (res.Placed > 0 || res.Removed > 0) res.Step("placed " + res.Placed + ", removed " + res.Removed);
 
             // the order (the manager's last wins; HellForge's top one does) and every one on
-            list = Hf.ReadMods(install);
+            if (res.Placed > 0 || res.Removed > 0) { list = Hf.ReadMods(install); res.Step("HellForge's list read again"); }
+            res.List = list;
             var order = wants.Where(w => mine.ContainsKey(w.Id)).Select(w => mine[w.Id].PackId).Reverse().ToList();
             var present = new HashSet<string>(list.Mods.Select(m => m.Id), StringComparer.OrdinalIgnoreCase);
             order = order.Where(present.Contains).ToList();
-            if (order.Count > 0)
+            // the order is set only when HellForge's differs (ours among its mods, top first)
+            var now = list.Mods.Select(m => m.Id).Where(id => order.Contains(id, StringComparer.OrdinalIgnoreCase)).ToList();
+            if (order.Count > 0 && !now.SequenceEqual(order, StringComparer.OrdinalIgnoreCase))
             {
                 var r = Hf.Run(install, "mod-order", "--ids", string.Join(",", order));
                 if (!r.Ok) res.Refused.Add("mod-order: " + r.Why);
+                res.Step("order set");
             }
-            foreach (var m in list.Mods.Where(m => order.Contains(m.Id, StringComparer.OrdinalIgnoreCase) && !m.Enabled))
+            var off = list.Mods.Where(m => order.Contains(m.Id, StringComparer.OrdinalIgnoreCase) && !m.Enabled).ToList();
+            foreach (var m in off)
             {
                 var r = Hf.Run(install, "mod-switch", "--id", m.Id, "--on", "yes");
                 if (!r.Ok) res.Refused.Add(m.Name + ": " + r.Why);
             }
+            if (off.Count > 0) res.Step("switched on (" + off.Count + ")");
             foreach (var p in list.Problems) res.Refused.Add("HellForge: " + p);
             return res;
         }
