@@ -217,7 +217,8 @@ namespace Hd2Qd.HellForge
         /// size, time) and the two games. A copy with the same signature needs nothing.</summary>
         public static string Signature(Want w, string games)
         {
-            var sb = new StringBuilder(w.Name).Append('\n').Append(games ?? "").Append('\n');
+            var sb = new StringBuilder(w.Name).Append('\n').Append(games ?? "").Append('\n')
+                .Append(w.MadeForHellForge ? "as it is" : "made ready").Append('\n');       // marked for HellForge or not: placed again
             foreach (var (src, name) in w.AllFiles())
             {
                 var fi = new FileInfo(src);
