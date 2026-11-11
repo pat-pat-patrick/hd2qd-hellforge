@@ -293,7 +293,9 @@ namespace Hd2Qd.HellForge
 
                 RenderAllOnlyMe();
 
-                body.Children.Add(Small(T("manage_in_manager"), new Thickness(0, 6, 0, 4)));
+                // a manager with deploy targets hands host["target"]; an older one (0.19.0 and
+                // earlier) has no HellForge choice above its library to point at
+                body.Children.Add(Small(T(host.ContainsKey("target") ? "manage_in_manager" : "manage_needs_newer"), new Thickness(0, 6, 0, 4)));
 
                 var shown = mods.Mods.Where(m => !m.Hidden).ToList();
                 foreach (var (group, title, hint) in new[]

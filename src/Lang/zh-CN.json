@@ -110,6 +110,7 @@
   "target_clash": "{0}：HellForge 中已存在“{1}”（非 Quick Deploy 部署）。如需部署库中的版本，请先在 HellForge 中移除该 MOD。",
   "managed": "由 Quick Deploy 部署，请在 Quick Deploy 的 HellForge 列表中启用或排序",
   "manage_in_manager": "请在 Quick Deploy 主窗口中管理 HellForge 的 MOD：在 MOD 库上方选择 HellForge。部署时将按 HellForge 的游戏版本转换各 MOD。",
+  "manage_needs_newer": "将 Quick Deploy 库中的 MOD 部署到 HellForge 需要更新版本的 HD2 Mod Quick Deploy（0.19.0 之后的版本），该版本在 MOD 库上方提供 HellForge 部署目标。当前版本仅能管理 HellForge 中已有的 MOD。",
   "target_nothing_left": "{0}：无适用于 HellForge 游戏版本的内容（仅为原版游戏制作），未部署",
   "tab_mods": "MOD",
   "tab_settings": "档案与设置",

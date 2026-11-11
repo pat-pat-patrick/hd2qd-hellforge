@@ -113,6 +113,7 @@
   "target_clash": "{0}: HellForge already contains \"{1}\", which was not deployed by Quick Deploy. Remove it in HellForge to deploy the library's version.",
   "managed": "Deployed by Quick Deploy. Enable and order it in Quick Deploy's HellForge list.",
   "manage_in_manager": "Manage HellForge's mods in the Quick Deploy main window by selecting HellForge above the library. On deploy, each mod is converted for HellForge's game version.",
+  "manage_needs_newer": "Mods from Quick Deploy's library are deployed to HellForge by a newer version of HD2 Mod Quick Deploy (later than 0.19.0), which adds HellForge as a deploy target above the library. This version manages the mods already in HellForge.",
   "target_nothing_left": "{0}: contains nothing for HellForge's game version (made for the official game only); not deployed",
   "tab_mods": "Mods",
   "tab_settings": "Profile and settings",
