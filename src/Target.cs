@@ -428,8 +428,17 @@ namespace Hd2Qd.HellForge
                 try
                 {
                     mine.TryGetValue(w.Id, out var old);
-                    var folder = old?.Folder ?? FreeName(mods, Placed.FolderName(w.Name));
+                    // the folder follows the mod's name: a new version ("… v1.229.0") gets a folder of
+                    // that name, and the old one ("… v1.226.1") goes once the new one is in place
+                    var named = Placed.FolderName(w.Name);
+                    var folder = old?.Folder != null && string.Equals(old.Folder, named, StringComparison.OrdinalIgnoreCase) ? old.Folder : FreeName(mods, named);
                     var entry = Place(install, w, folder, reports.TryGetValue(w.Id, out var rep) ? rep : null, officialData, hfData);
+                    if (old?.Folder != null && !string.Equals(old.Folder, entry.Folder, StringComparison.OrdinalIgnoreCase))
+                    {
+                        var was = System.IO.Path.Combine(mods, old.Folder);
+                        try { if (Directory.Exists(was)) Directory.Delete(was, true); }
+                        catch (Exception e) when (e is IOException || e is UnauthorizedAccessException) { res.Refused.Add(w.Name + ": " + old.Folder + ": " + e.Message); }
+                    }
                     entry.Signature = Signature(w, games);
                     entry.Games = games;
                     mine[w.Id] = entry;

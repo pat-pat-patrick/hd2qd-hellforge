@@ -136,6 +136,45 @@ namespace HellForge.Tests
         }
 
         [Fact]
+        public void ANewVersionsFolderIsNamedAfterItAndTheOldOneGoes()
+        {
+            using (var f = new FakeHellForge())
+            {
+                Install.PlacesOverride = () => new[] { f.Install };
+                try
+                {
+                    Plugin.Found(f.Home, true);
+                    const string guid = "44444444-dddd-4444-dddd-444444444444";
+                    var shh = Mod(f, "dddd4444", "Super Holo HUD v1.226.1", 1, guid);
+                    var other = Mod(f, "eeee5555", "Other", 1);
+                    var list = new List<Dictionary<string, object>> { shh, other };
+                    var host = Host(f, () => list);
+                    Plugin.TargetDeploy(host);
+                    Assert.True(Directory.Exists(Path.Combine(f.Mods, "Super Holo HUD v1.226.1")));
+                    var order = f.Order;
+
+                    // the library entry replaced by a new version: same id, a new name and files
+                    var shh2 = Mod(f, "dddd4444", "Super Holo HUD v1.229.0", 1, guid);
+                    list[0] = shh2;
+                    var r = Plugin.TargetDeploy(host);
+                    Assert.Empty((List<object>)r["refused"]);
+                    Assert.False(Directory.Exists(Path.Combine(f.Mods, "Super Holo HUD v1.226.1")));
+                    Assert.True(Directory.Exists(Path.Combine(f.Mods, "Super Holo HUD v1.229.0")));
+                    Assert.Equal(order, f.Order);                                           // the same pack id: order kept
+                    Assert.Single(Hf.ReadMods(f.Install).Mods, m => m.Id == "pack." + Deployed.GuidOf("dddd4444"));
+                    Assert.Equal(0L, Plugin.TargetStatus(host)["pending"]);
+
+                    // a name that only differs in case keeps its folder
+                    list[0] = Mod(f, "dddd4444", "super holo hud v1.229.0", 1, guid);
+                    Plugin.TargetDeploy(host);
+                    Assert.Single(Directory.GetDirectories(f.Mods, "super holo hud v1.229.0"));
+                    Assert.Equal(2, Directory.GetDirectories(f.Mods).Count(d => !Path.GetFileName(d).StartsWith(".")));
+                }
+                finally { Install.PlacesOverride = null; }
+            }
+        }
+
+        [Fact]
         public void APacksOwnFilesGoAlongAndAFolderHellForgeCannotNameIsStillTakenOut()
         {
             using (var f = new FakeHellForge())
