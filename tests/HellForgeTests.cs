@@ -220,6 +220,30 @@ namespace HellForge.Tests
             }
         }
 
+        [Fact]
+        public void SyncHandsItsListOnOnlyWhenNothingChangedAfterIt()
+        {
+            using (var f = new FakeHellForge())
+            {
+                var lib = f.LibraryPack("Super Holo HUD", GuidA);
+                var e = Placed.Put(f.Home, f.Install, "Super Holo HUD", lib, Hf.ReadMods(f.Install));
+                var status = Hf.ReadStatus(f.Install);
+                // nothing to bring over: the one mods read is handed on, status not read again
+                int statusReads = f.Calls.Count(c => c[0] == "status"), modsReads = f.Calls.Count(c => c[0] == "mods");
+                Assert.Empty(Plugin.Sync(f.Home, f.Install, null, status, out var listRead));
+                Assert.NotNull(listRead);
+                Assert.Contains(Hf.ParseMods(listRead).Mods, m => m.Id == e.Id);
+                Assert.Equal(statusReads, f.Calls.Count(c => c[0] == "status"));
+                Assert.Equal(modsReads + 1, f.Calls.Count(c => c[0] == "mods"));
+                // something brought over: no list handed on (the caller reads it after the change)
+                var libPatch = Directory.GetFiles(lib, "*.patch_0", SearchOption.AllDirectories)[0];
+                File.Delete(libPatch);
+                File.WriteAllBytes(libPatch, FakeHellForge.Patch((Scan.Lua, Encoding.UTF8.GetBytes("print(2)"))));
+                Assert.Single(Plugin.Sync(f.Home, f.Install, null, status, out listRead));
+                Assert.Null(listRead);
+            }
+        }
+
         // ---------------------------------------------------------------- only affects me
 
         [Fact]

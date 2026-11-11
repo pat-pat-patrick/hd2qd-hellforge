@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
@@ -40,6 +41,7 @@ namespace Hd2Qd.HellForge
             w.KeyDown += (s, e) => { if (e.Key == Key.Escape && !(e.OriginalSource is TextBox)) w.Close(); };
             w.Closed += (s, e) => { v.Close(); open = null; };
             open = w;
+            v.ShowSaved();
             w.Show();
             v.Read();
         }
@@ -123,48 +125,132 @@ namespace Hd2Qd.HellForge
 
             // ---------------------------------------------------------------- reading
 
+            /// <summary>HellForge's answers as the window last read them: (install, the answers of
+            /// status, mods, settings, profiles, logs and languages).</summary>
+            sealed class Answers
+            {
+                public string Install, Error;
+                public Dictionary<string, object> Status, Mods, Settings, Profiles, Logs, Languages;
+                public int Synced;
+            }
+
+            /// <summary>The window's last read, drawn at once when it opens; the live read replaces
+            /// it about a second later (the user, 2026-11-12: the window stayed empty for one or two
+            /// seconds while six HellForge.Cli processes ran one after another).</summary>
+            static string SavedFile(string home) => System.IO.Path.Combine(home, "hellforge", "window.json");
+
+            public void ShowSaved()
+            {
+                try
+                {
+                    var p = SavedFile(home);
+                    if (!File.Exists(p)) return;
+                    var d = Json.Obj(File.ReadAllText(p, Encoding.UTF8));
+                    var a = new Answers
+                    {
+                        Install = Json.Str(d, "install"), Status = Json.Obj(d, "status"), Mods = Json.Obj(d, "mods"), Settings = Json.Obj(d, "settings"),
+                        Profiles = Json.Obj(d, "profiles"), Logs = Json.Obj(d, "logs"), Languages = Json.Obj(d, "languages"),
+                    };
+                    if (a.Install == null || a.Status == null || a.Mods == null || !Install.IsInstall(a.Install)) return;
+                    Take(a);
+                    Render();
+                }
+                catch (Exception e) when (e is IOException || e is UnauthorizedAccessException || e is InvalidCastException || e is ArgumentException) { }
+            }
+
+            void Save(Answers a)
+            {
+                try
+                {
+                    Placed.WriteText(SavedFile(home), Json.Write(new Dictionary<string, object>
+                    {
+                        ["install"] = a.Install, ["status"] = a.Status, ["mods"] = a.Mods, ["settings"] = a.Settings,
+                        ["profiles"] = a.Profiles, ["logs"] = a.Logs, ["languages"] = a.Languages,
+                    }));
+                }
+                catch (Exception e) when (e is IOException || e is UnauthorizedAccessException) { }
+            }
+
+            /// <summary>The answers into the window's fields.</summary>
+            void Take(Answers a)
+            {
+                install = a.Install;
+                status = a.Status != null ? Hf.ParseStatus(a.Status) : null;
+                readError = a.Error;
+                if (install == null || status == null || !status.GameCopy) return;
+                mods = a.Mods != null ? Hf.ParseMods(a.Mods) : null;
+                settings = a.Settings != null ? Hf.ParseSettings(a.Settings) : null;
+                var pr = a.Profiles != null ? Hf.ParseProfiles(a.Profiles) : (new List<Hf.Profile>(), new List<string>());
+                profiles = pr.Item1; templates = pr.Item2;
+                runs = a.Logs != null ? Hf.ParseRuns(a.Logs) : new List<Hf.Session>();
+                languages = a.Languages != null ? Json.Objs(a.Languages, "languages") : new List<Dictionary<string, object>>();
+                try
+                {
+                    deployedPacks = new HashSet<string>(Deployed.Load(home, install).Values.Select(d => d.PackId).Where(x => x != null), StringComparer.OrdinalIgnoreCase);
+                    placed = Placed.Load(home, install);
+                }
+                catch (Exception e) when (e is IOException || e is UnauthorizedAccessException) { }
+            }
+
+            /// <summary>Every answer the window shows, read at once: each HellForge.Cli call is a
+            /// process of its own (status 0.18 s, mods 0.76 s, settings, profiles, logs and
+            /// languages 0.14-0.28 s each, 2026-11-12), so together they take about as long as the
+            /// mods list alone (0.81 s) instead of about 3 s one after another.</summary>
+            static Answers ReadAnswers(string home, string officialData, bool sync)
+            {
+                var a = new Answers { Install = Found(home, true) };
+                var inst = a.Install;
+                if (inst == null) return a;
+                Task<Dictionary<string, object>> Later(string command) => Task.Run(() => Hf.Ask(inst, command));
+                var settings = Later("settings");
+                var profiles = Later("profiles");
+                var logs = Later("logs");
+                var languages = Task.Run(() => { var r = Hf.Run(inst, "languages"); return r.Ok ? Json.Obj(r.Out) : null; });
+                // the mods list now, unless this read brings the library's changes over first
+                var modsNow = sync ? null : Later("mods");
+                try
+                {
+                    a.Status = Hf.Ask(inst, "status");
+                    var status = Hf.ParseStatus(a.Status);
+                    if (status == null || !status.GameCopy) return a;
+                    if (sync)
+                    {
+                        // the library's changes brought over, the "only affects me" marks made again
+                        a.Synced = Sync(home, inst, officialData, status, out var listRead).Count;
+                        a.Mods = listRead ?? Hf.Ask(inst, "mods");
+                    }
+                    else a.Mods = modsNow.Result;
+                    a.Settings = settings.Result;
+                    a.Profiles = profiles.Result;
+                    a.Logs = logs.Result;
+                    a.Languages = languages.Result;
+                }
+                catch (AggregateException e) when (e.InnerException is HfError || e.InnerException is IOException || e.InnerException is UnauthorizedAccessException || e.InnerException is System.ComponentModel.Win32Exception)
+                {
+                    a.Error = e.InnerException.Message;
+                }
+                catch (Exception e) when (e is HfError || e is IOException || e is UnauthorizedAccessException || e is System.ComponentModel.Win32Exception)
+                {
+                    a.Error = e.Message;
+                }
+                return a;
+            }
+
             public async void Read()
             {
                 if (reading) return;
                 reading = true;
-                int synced = 0;
                 try
                 {
-                    var r = await Task.Run(() =>
-                    {
-                        var inst = Found(home, true);
-                        if (inst == null) return (inst, (Exception)null, (Hf.Status)null);
-                        try { return (inst, (Exception)null, Hf.ReadStatus(inst)); }
-                        catch (Exception e) when (e is HfError || e is IOException || e is System.ComponentModel.Win32Exception) { return (inst, e, (Hf.Status)null); }
-                    });
-                    install = r.inst; status = r.Item3; readError = r.Item2?.Message;
-                    if (install != null && status != null && status.GameCopy)
-                    {
-                        var inst = install;
-                        var got = await Task.Run(() =>
-                        {
-                            try
-                            {
-                                // the library's changes brought over, the "only affects me" marks made again
-                                if (!syncedOnce) { synced = Sync(home, inst, Data(host)).Count; syncedOnce = true; }
-                                var m = Hf.ReadMods(inst);
-                                var st = Hf.ParseSettings(Hf.Ask(inst, "settings"));
-                                var pr = Hf.ParseProfiles(Hf.Ask(inst, "profiles"));
-                                var ru = Hf.ParseRuns(Hf.Ask(inst, "logs"));
-                                var la = Hf.Run(inst, "languages");
-                                var langs = la.Ok ? Json.Objs(Json.Obj(la.Out), "languages") : new List<Dictionary<string, object>>();
-                                deployedPacks = new HashSet<string>(Deployed.Load(home, inst).Values.Select(d => d.PackId).Where(x => x != null), StringComparer.OrdinalIgnoreCase);
-                                return (m, st, pr, ru, langs, Placed.Load(home, inst), (string)null);
-                            }
-                            catch (Exception e) when (e is HfError || e is IOException || e is UnauthorizedAccessException)
-                            {
-                                return ((Hf.ModList)null, (Hf.Settings)null, (new List<Hf.Profile>(), new List<string>()), new List<Hf.Session>(), new List<Dictionary<string, object>>(), new Dictionary<string, Placed.Entry>(), e.Message);
-                            }
-                        });
-                        mods = got.Item1; settings = got.Item2; profiles = got.Item3.Item1; templates = got.Item3.Item2; runs = got.Item4; languages = got.Item5; placed = got.Item6;
-                        readError = got.Item7;
-                        if (synced > 0) { Foot(T("synced", synced)); Changed(); }
-                    }
+                    bool sync = !syncedOnce;
+                    var data = Data(host);
+                    var a = await Task.Run(() => ReadAnswers(home, data, sync));
+                    if (sync && a.Status != null) syncedOnce = true;
+                    Take(a);
+                    // an answer HellForge did not give leaves its part empty, as before
+                    if (a.Error != null) { mods = null; settings = null; }
+                    else if (a.Mods != null) Save(a);
+                    if (a.Synced > 0) { Foot(T("synced", a.Synced)); Changed(); }
                 }
                 finally { reading = false; }
                 Render();
@@ -496,6 +582,9 @@ namespace Hd2Qd.HellForge
             {
                 if (busy) return;
                 busy = true;
+                // a change made on the last read's view waits for the live read to finish first
+                // (HellForge itself refuses mod changes while a session runs)
+                while (reading) await Task.Delay(50);
                 Hf.Result r;
                 try { r = await Task.Run(run); }
                 catch (Exception e) when (e is HfError || e is IOException || e is UnauthorizedAccessException || e is InvalidDataException)

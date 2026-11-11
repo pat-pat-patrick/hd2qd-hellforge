@@ -99,10 +99,16 @@ namespace Hd2Qd.HellForge
         }
 
         /// <summary>What Start does; returns what it changed, worded in English for the log.</summary>
-        internal static List<string> Sync(string home, string install, string officialData = null)
+        internal static List<string> Sync(string home, string install, string officialData = null) => Sync(home, install, officialData, null, out _);
+
+        /// <summary>Sync with HellForge's status already read (null: read here); listRead is the
+        /// mods command's answer when nothing changed after it (null otherwise), so a caller
+        /// needs no second read.</summary>
+        internal static List<string> Sync(string home, string install, string officialData, Hf.Status status, out Dictionary<string, object> listRead)
         {
+            listRead = null;
             var said = new List<string>();
-            var status = Hf.ReadStatus(install);
+            status = status ?? Hf.ReadStatus(install);
             if (status == null || status.Running || !status.GameCopy) return said;
             Placed.Forget(home, install);
             foreach (var e in Placed.Load(home, install).Values.Where(x => Placed.Stale(x) || Placed.GamesChanged(x, install, officialData)).ToList())
@@ -110,9 +116,12 @@ namespace Hd2Qd.HellForge
                 Placed.Renew(home, install, e, officialData);
                 said.Add("placed again: " + e.Name);
             }
-            var list = Hf.ReadMods(install);
-            foreach (var n in Coop.Reapply(home, install, list)) said.Add("only affects me again: " + n);
-            var all = Coop.MarkAll(home, install);
+            var raw = Hf.Ask(install, "mods");
+            var list = Hf.ParseMods(raw);
+            var again = Coop.Reapply(home, install, list);
+            foreach (var n in again) said.Add("only affects me again: " + n);
+            var all = Coop.MarkAll(home, install, again.Count > 0 ? null : list);
+            if (said.Count == 0 && all.Marked.Count == 0 && all.Refused.Count == 0) listRead = raw;
             foreach (var n in all.Marked) said.Add("only affects me (every gameplay mod): " + n);
             foreach (var n in all.Refused) said.Add("HellForge keeps it shared: " + n);
             notesAt = DateTime.MinValue;
