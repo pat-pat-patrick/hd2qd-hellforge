@@ -65,6 +65,13 @@ namespace Hd2Qd.HellForge
             if (s.Running) throw new HfError(Words.Get(lang, "locked"));
             if (!s.GameCopy) throw new HfError(Words.Get(lang, "not_ready"));
             var r = Deployed.Run(home, install, Data(host), Mods(host), lang);
+            try
+            {
+                var list = Hf.ReadMods(install);
+                Coop.Reapply(home, install, list);
+                foreach (var refused in Coop.MarkAll(home, install).Refused) r.Refused.Add(refused);
+            }
+            catch (Exception e) when (e is HfError || e is IOException || e is UnauthorizedAccessException) { r.Refused.Add(e.Message); }
             notesAt = DateTime.MinValue;
             return new Dictionary<string, object>
             {
@@ -82,6 +89,11 @@ namespace Hd2Qd.HellForge
             notesAt = DateTime.MinValue;
             return Words.F(Lang(host), "target_purged", n);
         }
+
+        /// <summary>A folder that is HellForge's own kind of mod (hellforge-mod.json, or bts-mod.json
+        /// from before the rename): added to the manager's library, it is for HellForge only.</summary>
+        public static bool TargetClaims(string folder, Dictionary<string, object> host) =>
+            !string.IsNullOrEmpty(folder) && Directory.Exists(folder) && Placed.CodeManifest(folder) != null;
 
         /// <summary>The window opened and a session started, as its Play button does.</summary>
         public static void TargetLaunch(System.Windows.Window owner, Dictionary<string, object> host)
@@ -102,7 +114,7 @@ namespace Hd2Qd.HellForge
                 Files = (m.TryGetValue("files", out var fl) && fl is IEnumerable<object> files ? files : new object[0])
                         .OfType<Dictionary<string, object>>().Select(x => (Src: x["src"] as string, Name: x["name"] as string))
                         .Where(x => x.Src != null && x.Name != null).ToList(),
-            }).Where(w => w.Id != null && w.Files.Count > 0).ToList();
+            }).Where(w => w.Id != null && (w.Files.Count > 0 || (w.Path != null && Directory.Exists(w.Path) && Placed.CodeManifest(w.Path) != null))).ToList();
         }
     }
 
@@ -113,6 +125,16 @@ namespace Hd2Qd.HellForge
         {
             public string Id, Name, Path;
             public List<(string Src, string Name)> Files = new List<(string, string)>();
+            /// <summary>HellForge's own kind of mod (hellforge-mod.json): its whole folder goes in as it is,
+            /// HellForge builds and loads it; its id is the manifest's.</summary>
+            public bool Whole => Path != null && Placed.CodeManifest(Path) != null;
+
+            /// <summary>Every file of a whole mod's folder, relative, else the planned files.</summary>
+            public List<(string Src, string Name)> AllFiles() =>
+                Whole ? Directory.EnumerateFiles(Path, "*", SearchOption.AllDirectories)
+                             .Where(f => !f.Substring(Path.TrimEnd('\\').Length + 1).StartsWith(".git"))
+                             .Select(f => (f, f.Substring(Path.TrimEnd('\\').Length + 1))).OrderBy(x => x.Item2, StringComparer.OrdinalIgnoreCase).ToList()
+                      : Files;
         }
 
         public sealed class Entry
@@ -184,7 +206,7 @@ namespace Hd2Qd.HellForge
         public static string Signature(Want w, string games)
         {
             var sb = new StringBuilder(w.Name).Append('\n').Append(games ?? "").Append('\n');
-            foreach (var (src, name) in w.Files)
+            foreach (var (src, name) in w.AllFiles())
             {
                 var fi = new FileInfo(src);
                 sb.Append(name).Append('|').Append(src).Append('|').Append(fi.Exists ? fi.Length + "|" + fi.LastWriteTimeUtc.Ticks : "missing").Append('\n');
@@ -221,10 +243,10 @@ namespace Hd2Qd.HellForge
             var toPlace = new List<Want>();
             foreach (var w in wants)
             {
-                // a library mod HellForge already has from elsewhere (its own Guid): left to the player
-                var ownGuid = OwnGuid(w.Path);
-                var clash = ownGuid == null ? null : list.Mods.FirstOrDefault(m => string.Equals(m.Id, "pack." + ownGuid, StringComparison.OrdinalIgnoreCase)
-                                                                                  && !ours.Contains(m.Id) && placedByHand.Values.All(p => !string.Equals(p.Id, m.Id, StringComparison.OrdinalIgnoreCase)));
+                // a library mod HellForge already has from elsewhere (its own Guid, or a HellForge mod's id): left to the player
+                var ownId = w.Whole ? Placed.IdOf(w.Path, System.IO.Path.GetFileName(w.Path)) : OwnGuid(w.Path) is string g ? "pack." + g : null;
+                var clash = ownId == null ? null : list.Mods.FirstOrDefault(m => string.Equals(m.Id, ownId, StringComparison.OrdinalIgnoreCase)
+                                                                                && !ours.Contains(m.Id) && placedByHand.Values.All(p => !string.Equals(p.Id, m.Id, StringComparison.OrdinalIgnoreCase)));
                 if (clash != null) { res.Refused.Add(Words.F(lang, "target_clash", w.Name, clash.Name)); continue; }
                 // a copy the plugin window put there by hand gives way to the deploy
                 foreach (var p in placedByHand.Values.Where(p => Placed.SamePath(p.Library, w.Path)).ToList())
@@ -236,7 +258,7 @@ namespace Hd2Qd.HellForge
             }
             var hfData = HfData(install);
             var reports = toPlace.Count > 0 && games != "none"
-                ? Port.CheckSets(home, officialData, hfData, toPlace.ToDictionary(w => w.Id, w => w.Files.Select(f => (f.Src, f.Name)).ToList(), StringComparer.OrdinalIgnoreCase))
+                ? Port.CheckSets(home, officialData, hfData, toPlace.Where(w => !w.Whole).ToDictionary(w => w.Id, w => w.Files.Select(f => (f.Src, f.Name)).ToList(), StringComparer.OrdinalIgnoreCase))
                 : new Dictionary<string, Port.Report>();
             foreach (var w in toPlace)
             {
@@ -341,12 +363,21 @@ namespace Hd2Qd.HellForge
             Directory.CreateDirectory(building);
             try
             {
-                bool sameDrive = string.Equals(System.IO.Path.GetPathRoot(System.IO.Path.GetFullPath(mods)),
-                                               System.IO.Path.GetPathRoot(System.IO.Path.GetFullPath(w.Files[0].Src)), StringComparison.OrdinalIgnoreCase);
-                foreach (var (src, name) in w.Files)
+                var files = w.AllFiles();
+                bool sameDrive = files.Count > 0 && string.Equals(System.IO.Path.GetPathRoot(System.IO.Path.GetFullPath(mods)),
+                                               System.IO.Path.GetPathRoot(System.IO.Path.GetFullPath(files[0].Src)), StringComparison.OrdinalIgnoreCase);
+                foreach (var (src, name) in files)
                 {
                     var to = System.IO.Path.Combine(building, name);
+                    Directory.CreateDirectory(System.IO.Path.GetDirectoryName(to));
                     if (!(sameDrive && CreateHardLink(to, src, IntPtr.Zero))) File.Copy(src, to, true);
+                }
+                if (w.Whole)
+                {
+                    var own = new Entry { QdId = w.Id, Folder = folder, PackId = Placed.IdOf(w.Path, folder), Name = w.Name, Level = Port.Level.Ready.ToString(), Library = w.Path };
+                    if (Directory.Exists(final)) Directory.Delete(final, true);
+                    Directory.Move(building, final);
+                    return own;
                 }
                 var guid = Deployed.GuidOf(w.Id);
                 Placed.WriteText(System.IO.Path.Combine(building, "manifest.json"), Json.Write(new Dictionary<string, object>

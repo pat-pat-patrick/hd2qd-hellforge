@@ -126,6 +126,71 @@ namespace HellForge.Tests
         }
 
         [Fact]
+        public void AHellForgeModOfTheLibraryGoesInWhole()
+        {
+            using (var f = new FakeHellForge())
+            {
+                Install.PlacesOverride = () => new[] { f.Install };
+                try
+                {
+                    Plugin.Found(f.Home, true);
+                    var dir = Path.Combine(f.Library, "Native_0123");
+                    Directory.CreateDirectory(Path.Combine(dir, "src"));
+                    File.WriteAllText(Path.Combine(dir, "hellforge-mod.json"), "{\r\n  \"id\": \"someone.native\",\r\n  \"name\": \"Native\"\r\n}\r\n");
+                    File.WriteAllText(Path.Combine(dir, "src", "mod.c"), "int x;");
+                    var host = Host(f, () => new List<Dictionary<string, object>>
+                    {
+                        new Dictionary<string, object> { ["id"] = "nnnn0001", ["name"] = "Native", ["path"] = dir, ["files"] = new List<object>() },
+                    });
+                    Assert.True(Plugin.TargetClaims(dir, host));
+                    Assert.False(Plugin.TargetClaims(f.Library, host));
+                    var r = Plugin.TargetDeploy(host);
+                    Assert.Empty((List<object>)r["refused"]);
+                    var placed = Path.Combine(f.Mods, "Native");
+                    Assert.True(File.Exists(Path.Combine(placed, "src", "mod.c")));
+                    Assert.Equal(2, FakeHellForge.Links(Path.Combine(placed, "hellforge-mod.json")));
+                    Assert.False(File.Exists(Path.Combine(placed, "manifest.json")));       // its own id, not a pack's
+                    Assert.Contains(Hf.ReadMods(f.Install).Mods, m => m.Id == "someone.native" && m.Group == "gameplay");
+                    Assert.Equal(new[] { "someone.native" }, f.Order);
+                    Assert.Equal(0L, Plugin.TargetStatus(host)["pending"]);
+
+                    // every gameplay mod only affects me: put on again after a deploy, never in the library's file
+                    Coop.SetAll(f.Home, f.Install, true);
+                    File.AppendAllText(Path.Combine(dir, "src", "mod.c"), "\n");            // a change: placed again
+                    Plugin.TargetDeploy(host);
+                    Assert.Equal("per-player", Hf.ReadMods(f.Install).Mods.Single(m => m.Id == "someone.native").Group);
+                    Assert.DoesNotContain("coop", File.ReadAllText(Path.Combine(dir, "hellforge-mod.json")));
+                }
+                finally { Install.PlacesOverride = null; }
+            }
+        }
+
+        [Fact]
+        public void AHellForgeModHellForgeHasFromElsewhereIsLeftAlone()
+        {
+            using (var f = new FakeHellForge())
+            {
+                Install.PlacesOverride = () => new[] { f.Install };
+                try
+                {
+                    Plugin.Found(f.Home, true);
+                    f.CodeZip();                                                   // HellForge holds someone.big-pack as a zip
+                    var dir = Path.Combine(f.Library, "Big Pack_0123");
+                    Directory.CreateDirectory(dir);
+                    File.WriteAllText(Path.Combine(dir, "hellforge-mod.json"), FakeHellForge.Manifest);
+                    var host = Host(f, () => new List<Dictionary<string, object>>
+                    {
+                        new Dictionary<string, object> { ["id"] = "bbbb0001", ["name"] = "Big Pack", ["path"] = dir, ["files"] = new List<object>() },
+                    });
+                    var refused = ((List<object>)Plugin.TargetDeploy(host)["refused"]).Cast<string>().ToList();
+                    Assert.Contains(refused, x => x.Contains("Big Pack"));
+                    Assert.False(Directory.Exists(Path.Combine(f.Mods, "Big Pack")));
+                }
+                finally { Install.PlacesOverride = null; }
+            }
+        }
+
+        [Fact]
         public void ADeployIsRefusedWhileASessionRuns()
         {
             using (var f = new FakeHellForge())
