@@ -7,6 +7,8 @@
     <Nullable>disable</Nullable>
     <IsPackable>false</IsPackable>
     <AssemblyName>HellForge.Tests</AssemblyName>
+    <!-- a Win32 icon in the test assembly: ExeIcon reads it back as HellForge.exe's -->
+    <ApplicationIcon>../src/app.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
@@ -14,6 +16,8 @@
     <Reference Include="System.Web.Extensions" />
     <Reference Include="System.IO.Compression" />
     <Reference Include="System.IO.Compression.FileSystem" />
+    <Reference Include="PresentationCore" />
+    <Reference Include="WindowsBase" />
   </ItemGroup>
 
   <ItemGroup>

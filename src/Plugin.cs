@@ -31,6 +31,15 @@ namespace Hd2Qd.HellForge
 
         static string Home(Dictionary<string, object> host) => (string)host["home"];
 
+        /// <summary>The title-bar button's icon: HellForge's own, read from the player's
+        /// HellForge.exe (ExeIcon says why it is not shipped); null when HellForge is not found or
+        /// has none, and the manager draws the anvil this plugin ships (app.ico).</summary>
+        public static byte[] Icon(Dictionary<string, object> host)
+        {
+            var install = Found(Home(host));
+            return install == null ? null : ExeIcon.Read(Install.Launcher(install));
+        }
+
         /// <summary>The official game's data folder (the manager's game folder), or null.</summary>
         internal static string Data(Dictionary<string, object> host) => host.TryGetValue("data", out var d) ? d as string : null;
 
