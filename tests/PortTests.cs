@@ -275,6 +275,14 @@ namespace HellForge.Tests
                     var placed = Path.Combine(f.Mods, "Holo port", "ee6b1ba7e22d71ed.patch_4");
                     Assert.Equal(bytes, File.ReadAllBytes(placed));                        // its render configuration kept
                     Assert.Equal("Ready", Deployed.Load(f.Home, f.Install)["port0001"].Level);
+                    Assert.Equal("link", Deployed.Load(f.Home, f.Install)["port0001"].How);   // the library's own file, hard-linked
+                    Assert.Equal("link", ((Dictionary<string, object>)Plugin.TargetStatus(host("hellforge"))["mods"])["port0001"]);
+
+                    // the same files as the official game's build: its render configuration is left
+                    // out, so the patch is the conversion's own file, and the row says so
+                    Plugin.TargetDeploy(host(null));
+                    Assert.Equal("converted", Deployed.Load(f.Home, f.Install)["port0001"].How);
+                    Assert.Equal("converted", ((Dictionary<string, object>)Plugin.TargetStatus(host(null))["mods"])["port0001"]);
                 }
                 finally { Install.PlacesOverride = null; }
             }

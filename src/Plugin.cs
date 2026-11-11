@@ -154,7 +154,7 @@ namespace Hd2Qd.HellForge
                 if (lines.Count == 0 && bml.Count == 0) return null;
                 return new Dictionary<string, object>
                 {
-                    ["text"] = Words.Get(lang, dep.Level == Port.Level.Partial.ToString() ? "port_note_partial" : bml.Count > 0 ? "note_risk" : "port_note_adjusted"),
+                    ["text"] = Words.Get(lang, dep.Level == Port.Level.Partial.ToString() ? "port_note_partial" : bml.Count > 0 ? "note_risk" : dep.Merged > 0 ? "port_note_adjusted" : "port_note_differs"),
                     ["tip"] = string.Join("\n", lines.Select(l => l.Text).Concat(bml)), ["colour"] = lines.Any(l => l.Colour == "Yellow") || bml.Count > 0 ? "Yellow" : "Blue",
                 };
             }
@@ -166,7 +166,7 @@ namespace Hd2Qd.HellForge
             if (risks.Count > 0 || entry.Level == Port.Level.Partial.ToString() || entry.Level == Port.Level.Adjusted.ToString())
                 return new Dictionary<string, object>
                 {
-                    ["text"] = Words.Get(lang, entry.Level == Port.Level.Partial.ToString() ? "port_note_partial" : risks.Count > 0 ? "note_risk" : "port_note_adjusted"),
+                    ["text"] = Words.Get(lang, entry.Level == Port.Level.Partial.ToString() ? "port_note_partial" : risks.Count > 0 ? "note_risk" : entry.Merged > 0 ? "port_note_adjusted" : "port_note_differs"),
                     ["tip"] = string.Join("\n", port.Select(p => p.Text).Concat(risks)), ["colour"] = "Yellow",
                 };
             if (Placed.Stale(entry))

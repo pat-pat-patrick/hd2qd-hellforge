@@ -67,7 +67,7 @@ namespace HellForge.Tests
                     // the manager's last mod wins; HellForge's top one does
                     Assert.Equal(new[] { packB, packA }, f.Order);
                     Assert.Equal(0L, Plugin.TargetStatus(host)["pending"]);
-                    Assert.All(((Dictionary<string, object>)Plugin.TargetStatus(host)["mods"]).Values, v => Assert.Equal("deployed", v));  // each row: there as the library has it
+                    Assert.All(((Dictionary<string, object>)Plugin.TargetStatus(host)["mods"]).Values, v => Assert.Equal("link", v));       // each row: there as hard links to the library's files
                     Assert.Empty(Directory.GetDirectories(f.Mods, ".hd2qd-*"));
 
                     // the same list again: nothing placed again

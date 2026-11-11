@@ -167,6 +167,10 @@ namespace Hd2Qd.HellForge
         public sealed class Entry
         {
             public string QdId, Folder, PackId, Name, Signature, Level, Games, Library;
+            /// <summary>How its files are in HellForge, as the manager's rows say it for the official
+            /// game: "link" (hard links to the library's files), "copy" (another drive), "converted"
+            /// (files the conversion wrote, Port.Apply); null in a record made before 0.8.4.</summary>
+            public string How;
             public int Merged;
             public Dictionary<string, int> LeftOutTypes = new Dictionary<string, int>(), KeptDiffering = new Dictionary<string, int>();
             public List<string> Notes = new List<string>();
@@ -195,6 +199,7 @@ namespace Hd2Qd.HellForge
                         QdId = kv.Key, Folder = Json.Str(e, "folder"), PackId = Json.Str(e, "pack"), Name = Json.Str(e, "name"),
                         Signature = Json.Str(e, "signature"), Level = Json.Str(e, "level"), Games = Json.Str(e, "games"),
                         Merged = (int)Json.Long(e, "merged"), Notes = Json.Strs(e, "notes"), Library = Json.Str(e, "library"),
+                        How = Json.Str(e, "how"),
                     };
                     foreach (var t in Json.Obj(e, "left_out_types") ?? new Dictionary<string, object>()) entry.LeftOutTypes[t.Key] = (int)Json.Long(Json.Obj(e, "left_out_types"), t.Key);
                     foreach (var t in Json.Obj(e, "kept_differing") ?? new Dictionary<string, object>()) entry.KeptDiffering[t.Key] = (int)Json.Long(Json.Obj(e, "kept_differing"), t.Key);
@@ -212,7 +217,7 @@ namespace Hd2Qd.HellForge
             all[Key(install)] = mine.Values.ToDictionary(e => e.QdId, e => (object)new Dictionary<string, object>
             {
                 ["folder"] = e.Folder, ["pack"] = e.PackId, ["name"] = e.Name, ["signature"] = e.Signature, ["level"] = e.Level, ["games"] = e.Games,
-                ["merged"] = e.Merged, ["notes"] = e.Notes.Cast<object>().ToList(), ["library"] = e.Library,
+                ["merged"] = e.Merged, ["notes"] = e.Notes.Cast<object>().ToList(), ["library"] = e.Library, ["how"] = e.How,
                 ["left_out_types"] = e.LeftOutTypes.ToDictionary(k => k.Key, k => (object)k.Value),
                 ["kept_differing"] = e.KeptDiffering.ToDictionary(k => k.Key, k => (object)k.Value),
             });
@@ -247,8 +252,9 @@ namespace Hd2Qd.HellForge
             officialData != null && File.Exists(System.IO.Path.Combine(officialData, "bundles.nxa")) ? Placed.Games(officialData, HfData(install)) : "none";
 
         /// <summary>How many mods a deploy would place, place again or take out.</summary>
-        /// <summary>Each mod of the list in use: "deployed" (in HellForge as the library has it)
-        /// or "pending" (a deploy would place it again), by the same test as Pending.</summary>
+        /// <summary>Each mod of the list in use: "pending" (a deploy would place it again, the
+        /// same test as Pending), else how it is in HellForge as the library has it: "link",
+        /// "copy" or "converted" (Entry.How).</summary>
         public static Dictionary<string, string> States(string home, string install, string officialData, List<Want> wants)
         {
             var mine = Load(home, install);
@@ -256,8 +262,56 @@ namespace Hd2Qd.HellForge
             var states = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             foreach (var w in wants.Where(w => w.Id != null))
                 states[w.Id] = !mine.TryGetValue(w.Id, out var e) || e.Signature != Signature(w, games)
-                               || (e.Folder != null && !Directory.Exists(System.IO.Path.Combine(Install.Mods(install), e.Folder))) ? "pending" : "deployed";
+                               || (e.Folder != null && !Directory.Exists(System.IO.Path.Combine(Install.Mods(install), e.Folder))) ? "pending" : HowOf(install, e);
             return states;
+        }
+
+        static readonly Dictionary<string, string> howSeen = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>How a placed mod is in HellForge: its record's How, else (a record made before
+        /// 0.8.4) read once from its files' link counts: one file that is no hard link makes it a
+        /// copy, or converted when the conversion wrote to it.</summary>
+        static string HowOf(string install, Entry e)
+        {
+            if (e.How != null) return e.How;
+            if (e.Folder == null) return "link";
+            var folder = System.IO.Path.Combine(Install.Mods(install), e.Folder);
+            var key = folder + "|" + e.Signature;
+            lock (howSeen)
+            {
+                if (howSeen.TryGetValue(key, out var had)) return had;
+                bool single = Directory.EnumerateFiles(folder, "*", SearchOption.AllDirectories)
+                                       .Where(f => Placed.IsPatch(System.IO.Path.GetFileName(f))).Any(f => Links(f) == 1);
+                var how = !single ? "link" : e.Merged > 0 || e.LeftOutTypes.Count > 0 ? "converted" : "copy";
+                howSeen[key] = how;
+                return how;
+            }
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        struct FileInfoByHandle
+        {
+            public uint Attributes;
+            public long Created, Accessed, Written;
+            public uint Volume, SizeHigh, SizeLow, Links, IndexHigh, IndexLow;
+        }
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        static extern IntPtr CreateFile(string name, uint access, uint share, IntPtr security, uint disposition, uint flags, IntPtr template);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        static extern bool GetFileInformationByHandle(IntPtr file, out FileInfoByHandle info);
+
+        [DllImport("kernel32.dll")]
+        static extern bool CloseHandle(IntPtr h);
+
+        /// <summary>A file's hard-link count (1: no other name), 0 when it cannot be read.</summary>
+        static uint Links(string path)
+        {
+            var h = CreateFile(path, 0, 7, IntPtr.Zero, 3, 0x02000000, IntPtr.Zero);
+            if (h == new IntPtr(-1)) return 0;
+            try { return GetFileInformationByHandle(h, out var i) ? i.Links : 0; }
+            finally { CloseHandle(h); }
         }
 
         public static int Pending(string home, string install, string officialData, List<Want> wants) =>
@@ -408,17 +462,19 @@ namespace Hd2Qd.HellForge
             try
             {
                 var files = w.AllFiles();
+                bool copied = false;
                 bool sameDrive = files.Count > 0 && string.Equals(System.IO.Path.GetPathRoot(System.IO.Path.GetFullPath(mods)),
                                                System.IO.Path.GetPathRoot(System.IO.Path.GetFullPath(files[0].Src)), StringComparison.OrdinalIgnoreCase);
                 foreach (var (src, name) in files)
                 {
                     var to = System.IO.Path.Combine(building, name);
                     Directory.CreateDirectory(System.IO.Path.GetDirectoryName(to));
-                    if (!(sameDrive && CreateHardLink(to, src, IntPtr.Zero))) File.Copy(src, to, true);
+                    if (!(sameDrive && CreateHardLink(to, src, IntPtr.Zero))) { File.Copy(src, to, true); copied = true; }
                 }
                 if (w.Whole)
                 {
-                    var own = new Entry { QdId = w.Id, Folder = folder, PackId = Placed.IdOf(w.Path, folder), Name = w.Name, Level = Port.Level.Ready.ToString(), Library = w.Path };
+                    var own = new Entry { QdId = w.Id, Folder = folder, PackId = Placed.IdOf(w.Path, folder), Name = w.Name, Level = Port.Level.Ready.ToString(), Library = w.Path,
+                                          How = copied ? "copy" : "link" };
                     if (Directory.Exists(final)) Directory.Delete(final, true);
                     Directory.Move(building, final);
                     return own;
@@ -430,7 +486,7 @@ namespace Hd2Qd.HellForge
                         if (Placed.IsPatch(name) || string.Equals(name, "manifest.json", StringComparison.OrdinalIgnoreCase)) continue;
                         var to = System.IO.Path.Combine(building, name);
                         if (File.Exists(to)) continue;
-                        if (!(sameDrive && CreateHardLink(to, top, IntPtr.Zero))) File.Copy(top, to, true);
+                        if (!(sameDrive && CreateHardLink(to, top, IntPtr.Zero))) { File.Copy(top, to, true); copied = true; }
                     }
                 var guid = Deployed.GuidOf(w.Id);
                 Placed.WriteText(System.IO.Path.Combine(building, "manifest.json"), Json.Write(new Dictionary<string, object>
@@ -447,6 +503,8 @@ namespace Hd2Qd.HellForge
                     entry.LeftOutTypes = report.LeftOutTypes.ToDictionary(k => k.Key.ToString("x16"), k => k.Value);
                     entry.KeptDiffering = report.KeptDiffering.ToDictionary(k => k.Key.ToString("x16"), k => k.Value);
                 }
+                // the conversion wrote (or took away) a patch file: no longer the library's own file
+                entry.How = report != null && report.Steps.Count > 0 ? "converted" : copied ? "copy" : "link";
                 if (Directory.Exists(final)) Directory.Delete(final, true);
                 // nothing of it is for HellForge's game (Boot Mod Loader: its boot only, 2026-11-11: an
                 // empty pack HellForge listed as a problem): not placed at all

@@ -95,6 +95,7 @@
   "port_kept": "Different in HellForge's game version and deployed unchanged; visuals or audio may be incorrect: {0}",
   "port_note_partial": "HellForge: partially deployed",
   "port_note_adjusted": "HellForge: converted",
+  "port_note_differs": "HellForge: resources differ",
   "type_render_config": "render configuration",
   "type_shader_library": "shader libraries",
   "type_lua": "game Lua scripts",

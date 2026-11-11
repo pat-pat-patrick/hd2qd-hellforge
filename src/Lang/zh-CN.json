@@ -93,6 +93,7 @@
   "port_kept": "以下资源在 HellForge 的游戏版本中不同，已按原样部署，显示或音效可能异常：{0}",
   "port_note_partial": "HellForge：部分未部署",
   "port_note_adjusted": "HellForge：已转换",
+  "port_note_differs": "HellForge：部分资源版本不同",
   "type_render_config": "渲染配置",
   "type_shader_library": "着色器库",
   "type_lua": "游戏内置 LUA 脚本",
