@@ -87,7 +87,10 @@ namespace Hd2Qd.HellForge
             {
                 var list = r.List ?? Hf.ReadMods(install);
                 var again = Coop.Reapply(home, install, list);
-                foreach (var refused in Coop.MarkAll(home, install, again.Count > 0 ? null : list).Refused) r.Refused.Add(refused);
+                // a code mod placed now is not in the list read before placing: its group (gameplay or
+                // per-player) is HellForge's to say, so the marks read the list again, only then (and
+                // MarkAll reads nothing while "every gameplay mod only for me" is off)
+                foreach (var refused in Coop.MarkAll(home, install, again.Count > 0 || r.CodePlaced > 0 ? null : list).Refused) r.Refused.Add(refused);
                 r.Step("co-op marks");
             }
             catch (Exception e) when (e is HfError || e is IOException || e is UnauthorizedAccessException) { r.Refused.Add(e.Message); }
@@ -226,6 +229,8 @@ namespace Hd2Qd.HellForge
             /// <summary>Code mods with sources this deploy placed: HellForge compiles them, so the
             /// deploy has it do so now, not the next session.</summary>
             public int SourcePlaced;
+            /// <summary>Code mods (hellforge-mod.json) this deploy placed.</summary>
+            public int CodePlaced;
             public List<string> Refused = new List<string>();
             /// <summary>HellForge's mod list after the deploy placed and removed (its order and
             /// switches aside): the co-op marks are read from it, not read again.</summary>
@@ -431,6 +436,7 @@ namespace Hd2Qd.HellForge
                     if (entry.Folder == null) { res.Refused.Add(Words.F(lang, "target_nothing_left", w.Name)); continue; }
                     ours.Add(entry.PackId);
                     res.Placed++;
+                    if (w.Whole) res.CodePlaced++;
                     if (w.Whole && w.Path != null && Directory.Exists(System.IO.Path.Combine(w.Path, "src"))) res.SourcePlaced++;
                 }
                 catch (Exception e) when (e is IOException || e is UnauthorizedAccessException || e is InvalidDataException)
@@ -440,47 +446,64 @@ namespace Hd2Qd.HellForge
             }
             Save(home, install, mine);
 
-            // mods no longer on: their folders taken out (HellForge's own mod-remove)
+            // mods no longer on: their folders taken out. They are this target's own folders, so
+            // they are deleted here, not through HellForge's mod-remove: every HellForge.Cli call
+            // is a process of its own, 0.4-0.8 s (2026-11-12), and HellForge.exe watches the folder
+            var removedIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var gone in mine.Values.Where(e => wants.All(w => !string.Equals(w.Id, e.QdId, StringComparison.OrdinalIgnoreCase))).ToList())
             {
                 var folder = System.IO.Path.Combine(mods, gone.Folder ?? "\0");
-                if (Directory.Exists(folder))
-                {
-                    var r = Hf.Run(install, "mod-remove", "--id", gone.PackId);
-                    // one HellForge does not list (it could not read it: 2026-11-11, an empty pack) is ours to delete
-                    if (!r.Ok && Directory.Exists(folder))
-                        try { Directory.Delete(folder, true); }
-                        catch (Exception e) when (e is IOException || e is UnauthorizedAccessException) { res.Refused.Add(gone.Name + ": " + r.Why + "; " + e.Message); continue; }
-                }
+                if (gone.Folder != null && Directory.Exists(folder))
+                    try { Directory.Delete(folder, true); }
+                    catch (Exception e) when (e is IOException || e is UnauthorizedAccessException) { res.Refused.Add(gone.Name + ": " + e.Message); continue; }
+                if (gone.PackId != null) removedIds.Add(gone.PackId);
                 mine.Remove(gone.QdId);
                 res.Removed++;
             }
             Save(home, install, mine);
             if (res.Placed > 0 || res.Removed > 0) res.Step("placed " + res.Placed + ", removed " + res.Removed);
 
-            // the order (the manager's last wins; HellForge's top one does) and every one on
-            if (res.Placed > 0 || res.Removed > 0) { list = Hf.ReadMods(install); res.Step("HellForge's list read again"); }
+            // the order (the manager's last wins; HellForge's top one does) and every one on,
+            // written into hellforge-mods.json as HellForge documents for launchers
+            // (external-launchers.md, "Mods": whole file, temporary file then rename), not through
+            // mod-order and mod-switch; the list read before placing says the rest of the order
             res.List = list;
-            var order = wants.Where(w => mine.ContainsKey(w.Id)).Select(w => mine[w.Id].PackId).Reverse().ToList();
-            var present = new HashSet<string>(list.Mods.Select(m => m.Id), StringComparer.OrdinalIgnoreCase);
-            order = order.Where(present.Contains).ToList();
-            // the order is set only when HellForge's differs (ours among its mods, top first)
-            var now = list.Mods.Select(m => m.Id).Where(id => order.Contains(id, StringComparer.OrdinalIgnoreCase)).ToList();
-            if (order.Count > 0 && !now.SequenceEqual(order, StringComparer.OrdinalIgnoreCase))
+            var order = wants.Where(w => mine.TryGetValue(w.Id, out var e) && e.Folder != null && e.PackId != null).Select(w => mine[w.Id].PackId).Reverse().ToList();
+            try
             {
-                var r = Hf.Run(install, "mod-order", "--ids", string.Join(",", order));
-                if (!r.Ok) res.Refused.Add("mod-order: " + r.Why);
-                res.Step("order set");
+                if (WriteModsFile(list.SettingsFile ?? System.IO.Path.Combine(mods, "hellforge-mods.json"), order, list.Mods.Select(m => m.Id).ToList(), removedIds))
+                    res.Step("order and switches written");
             }
-            var off = list.Mods.Where(m => order.Contains(m.Id, StringComparer.OrdinalIgnoreCase) && !m.Enabled).ToList();
-            foreach (var m in off)
-            {
-                var r = Hf.Run(install, "mod-switch", "--id", m.Id, "--on", "yes");
-                if (!r.Ok) res.Refused.Add(m.Name + ": " + r.Why);
-            }
-            if (off.Count > 0) res.Step("switched on (" + off.Count + ")");
+            catch (Exception e) when (e is IOException || e is UnauthorizedAccessException) { res.Refused.Add("hellforge-mods.json: " + e.Message); }
             foreach (var p in list.Problems) res.Refused.Add("HellForge: " + p);
             return res;
+        }
+
+        /// <summary>HellForge's mod state file brought to the deploy's order: ours first, top first,
+        /// then the others in the order HellForge had them (as mod-order does); ours taken out of
+        /// "disabled" (mods are on unless it lists them); the removed ones taken out of both. Every
+        /// other field kept as it was. False when it already was so (nothing written).</summary>
+        internal static bool WriteModsFile(string file, List<string> ours, List<string> listed, ICollection<string> removed)
+        {
+            Dictionary<string, object> doc = null;
+            if (File.Exists(file)) doc = Json.Obj(File.ReadAllText(file, Encoding.UTF8));
+            doc = doc ?? new Dictionary<string, object> { ["format"] = 1L };
+            var cmp = StringComparer.OrdinalIgnoreCase;
+            var oldOrder = (Json.List(doc, "order") ?? new List<object>()).OfType<string>().ToList();
+            var oldOff = (Json.List(doc, "disabled") ?? new List<object>()).OfType<string>().ToList();
+            var rest = listed.Concat(oldOrder).Where(id => !ours.Contains(id, cmp) && !removed.Contains(id)).Distinct(cmp);
+            var order = ours.Concat(rest).ToList();
+            var off = oldOff.Where(id => !ours.Contains(id, cmp) && !removed.Contains(id)).ToList();
+            if (order.SequenceEqual(oldOrder, cmp) && off.SequenceEqual(oldOff, cmp)) return false;
+            doc["order"] = order.Cast<object>().ToList();
+            doc["disabled"] = off.Cast<object>().ToList();
+            if (Json.Obj(doc, "packs") is Dictionary<string, object> packs)
+                foreach (var id in removed) packs.Remove(id);
+            var tmp = file + ".hd2qd-" + Guid.NewGuid().ToString("N").Substring(0, 8) + ".tmp";
+            File.WriteAllText(tmp, Json.Write(doc), new UTF8Encoding(false));
+            if (File.Exists(file)) File.Replace(tmp, file, null);
+            else File.Move(tmp, file);
+            return true;
         }
 
         /// <summary>Every mod this target put into HellForge taken out. Returns how many.</summary>

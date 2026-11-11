@@ -11,6 +11,7 @@
   "not_an_install": "该文件夹中没有 hellforge-install.json，不是 HellForge 安装。",
   "not_ready": "HellForge 尚未完成安装。首次安装需从 Steam 复制游戏、验证所有权并安装网络拦截（需要一次管理员授权），仅能在 HellForge.exe 中完成。请先运行 HellForge.exe 完成安装。",
   "open_hellforge": "打开 HellForge",
+  "launcher_during_session": "对局正在运行。对局期间 HellForge 会临时替换游戏副本中的 3 个文件，此时打开 HellForge.exe 会显示安装页面，请勿点击“Start setup”。建议在对局结束后再打开。是否仍要打开？",
   "open_hellforge_setup": "打开 HellForge 完成安装",
   "versions": "HellForge {0} · 游戏版本 {1}",
   "play": "启动游戏",

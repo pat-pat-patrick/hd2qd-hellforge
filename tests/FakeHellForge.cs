@@ -21,9 +21,22 @@ namespace HellForge.Tests
         public readonly string Root, Install, Home, Library;
         public bool Running;
         public readonly List<string[]> Calls = new List<string[]>();
-        public readonly HashSet<string> Disabled = new HashSet<string>();
+        /// <summary>HellForge's state file (mods\hellforge-mods.json): its "disabled" and "order".</summary>
+        string StateFile => Path.Combine(Mods, "hellforge-mods.json");
+        Dictionary<string, object> State() => File.Exists(StateFile) ? Json.Obj(File.ReadAllText(StateFile)) ?? new Dictionary<string, object>() : new Dictionary<string, object> { ["format"] = 1L };
+        void SaveState(Dictionary<string, object> d) => File.WriteAllText(StateFile, Json.Write(d));
+        public HashSet<string> Disabled => new HashSet<string>((Json.List(State(), "disabled") ?? new List<object>()).OfType<string>(), StringComparer.OrdinalIgnoreCase);
+        /// <summary>The player switching a mod off on HellForge's Mods page.</summary>
+        public void SwitchOff(string id)
+        {
+            var d = State();
+            d["disabled"] = Disabled.Concat(new[] { id }).Distinct(StringComparer.OrdinalIgnoreCase).Cast<object>().ToList();
+            SaveState(d);
+        }
         /// <summary>The last mod-order, top first.</summary>
-        public List<string> Order = new List<string>();
+        public List<string> Order => (Json.List(State(), "order") ?? new List<object>()).OfType<string>().ToList();
+        /// <summary>The CLI commands that changed the state, by name (the deploy should need none).</summary>
+        public int StateCalls;
 
         public FakeHellForge()
         {
@@ -81,11 +94,14 @@ namespace HellForge.Tests
                     return Ok(new Dictionary<string, object> { ["install"] = Install, ["sourceMods"] = 1L, ["built"] = 1L, ["problems"] = new List<object>() });
                 case "mod-order":
                     if (Running) return Fail("a session is running");
-                    Order = Arg("--ids").Split(',').ToList();
+                    StateCalls++;
+                    { var d = State(); d["order"] = Arg("--ids").Split(',').Cast<object>().ToList(); SaveState(d); }
                     return Ok(new Dictionary<string, object>());
                 case "mod-switch":
                     if (Running) return Fail("a session is running");
-                    if (Arg("--on") == "no") Disabled.Add(Arg("--id")); else Disabled.Remove(Arg("--id"));
+                    StateCalls++;
+                    if (Arg("--on") == "no") SwitchOff(Arg("--id"));
+                    else { var d = State(); d["disabled"] = Disabled.Where(x => !string.Equals(x, Arg("--id"), StringComparison.OrdinalIgnoreCase)).Cast<object>().ToList(); SaveState(d); }
                     return Ok(new Dictionary<string, object>());
             }
             return Fail("unknown command " + args[0]);

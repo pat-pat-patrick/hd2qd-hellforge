@@ -1174,6 +1174,10 @@ namespace Hd2Qd.HellForge
 
             void OpenLauncher()
             {
+                // a session runs (started here, or by the manager): HellForge has its stand-ins for three
+                // of the copy's DLLs in place until it ends, and HellForge.exe, which knows only its own
+                // sessions, takes the copy for a broken one and shows its setup page (2026-11-12)
+                if (status?.Running == true && !Ask(T("launcher_during_session"), T("open_hellforge"))) return;
                 try { Process.Start(new ProcessStartInfo(Install.Launcher(install)) { UseShellExecute = true, WorkingDirectory = install }); }
                 catch (Exception e) when (e is System.ComponentModel.Win32Exception || e is InvalidOperationException || e is FileNotFoundException) { Tell(e.Message); }
             }

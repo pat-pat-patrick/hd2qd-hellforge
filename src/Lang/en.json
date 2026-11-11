@@ -12,6 +12,7 @@
   "not_an_install": "The selected folder does not contain hellforge-install.json and is not a HellForge installation.",
   "not_ready": "HellForge has not been set up. The first setup copies the game from Steam, verifies ownership and installs the network block (one Windows administrator prompt). This can only be done in HellForge.exe: run it once, then return here.",
   "open_hellforge": "Open HellForge",
+  "launcher_during_session": "A session is running. During a session HellForge temporarily replaces three files of its game copy, so HellForge.exe opened now shows its setup page; do not choose Start setup. Open it after the session ends. Open it anyway?",
   "open_hellforge_setup": "Open HellForge to complete the setup",
   "versions": "HellForge {0} · game version {1}",
   "play": "Play",

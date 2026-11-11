@@ -71,16 +71,22 @@ namespace HellForge.Tests
                     Assert.All(((Dictionary<string, object>)Plugin.TargetStatus(host)["mods"]).Values, v => Assert.Equal("link", v));       // each row: there as hard links to the library's files
                     Assert.Empty(Directory.GetDirectories(f.Mods, ".hd2qd-*"));
 
-                    // the same list again: nothing placed again
+                    // the same list again: nothing placed again, and HellForge's slow list read once
+                    int reads = f.Calls.Count(c => c[0] == "mods");
                     r = Plugin.TargetDeploy(host);
                     Assert.Contains("0 deployed, 2 unchanged", (string)r["said"]);
+                    Assert.Equal(reads + 1, f.Calls.Count(c => c[0] == "mods"));
+                    Assert.Equal(0, f.StateCalls);                                          // order and switches: the state file, no mod-order / mod-switch
 
                     // a switched off in HellForge.exe comes back on; b off in the manager goes out
-                    f.Disabled.Add(packA);
+                    f.SwitchOff(packA);
                     list.Remove(b);
                     Assert.Equal(1L, Plugin.TargetStatus(host)["pending"]);
+                    reads = f.Calls.Count(c => c[0] == "mods");
                     r = Plugin.TargetDeploy(host);
                     Assert.Contains("1 removed", (string)r["said"]);
+                    Assert.Equal(reads + 1, f.Calls.Count(c => c[0] == "mods"));           // not read again after removing
+                    Assert.DoesNotContain(f.Calls, c => c[0] == "mod-remove" || c[0] == "mod-order" || c[0] == "mod-switch");
                     mods = Hf.ReadMods(f.Install).Mods;
                     Assert.DoesNotContain(mods, m => m.Id == packB);
                     Assert.True(mods.Single(m => m.Id == packA).Enabled);
@@ -193,7 +199,7 @@ namespace HellForge.Tests
                     Assert.Equal(2, FakeHellForge.Links(Path.Combine(placed, "hellforge-mod.json")));
                     Assert.False(File.Exists(Path.Combine(placed, "manifest.json")));       // its own id, not a pack's
                     Assert.Contains(Hf.ReadMods(f.Install).Mods, m => m.Id == "someone.native" && m.Group == "gameplay");
-                    Assert.Empty(f.Order);                                                  // one mod: HellForge's order is ours already, not set again
+                    Assert.Equal(new[] { "someone.native" }, f.Order);                      // in HellForge's state file
                     Assert.Equal(0L, Plugin.TargetStatus(host)["pending"]);
 
                     // every gameplay mod only affects me: put on again after a deploy, never in the library's file
