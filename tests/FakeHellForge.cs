@@ -73,6 +73,12 @@ namespace HellForge.Tests
                     if (m.Archive != null) File.Delete(m.Archive); else Directory.Delete(m.Folder, true);
                     return Ok(new Dictionary<string, object>());
                 }
+                case "build-source-mods":
+                    if (Running) return Fail("a session is running");
+                    File.WriteAllText(Arg("--progress"), "{\"stage\":\"tools\",\"done\":0,\"total\":1,\"mod\":\"Native\"}");
+                    System.Threading.Thread.Sleep(700);                                   // long enough for the deploy to read it
+                    File.WriteAllText(Arg("--progress"), "{\"stage\":\"done\",\"done\":1,\"total\":1,\"mod\":\"\"}");
+                    return Ok(new Dictionary<string, object> { ["install"] = Install, ["sourceMods"] = 1L, ["built"] = 1L, ["problems"] = new List<object>() });
                 case "mod-order":
                     if (Running) return Fail("a session is running");
                     Order = Arg("--ids").Split(',').ToList();

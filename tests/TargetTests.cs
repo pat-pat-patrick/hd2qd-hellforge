@@ -55,6 +55,7 @@ namespace HellForge.Tests
 
                     var r = Plugin.TargetDeploy(host);
                     Assert.Empty((List<object>)r["refused"]);
+                    Assert.DoesNotContain(f.Calls, c => c[0] == "build-source-mods");       // no sources: nothing to build
                     var mods = Hf.ReadMods(f.Install).Mods;
                     var packA = "pack." + Deployed.GuidOf("aaaa1111");
                     var packB = "pack." + Deployed.GuidOf("bbbb2222");
@@ -179,8 +180,14 @@ namespace HellForge.Tests
                     });
                     Assert.True(Plugin.TargetClaims(dir, host));
                     Assert.False(Plugin.TargetClaims(f.Library, host));
+                    var said = new List<string>();
+                    host["progress"] = (Action<string>)(t => { lock (said) said.Add(t); });
                     var r = Plugin.TargetDeploy(host);
                     Assert.Empty((List<object>)r["refused"]);
+                    // its sources: compiled during the deploy by HellForge's own build, its progress said
+                    Assert.Contains(f.Calls, c => c[0] == "build-source-mods");
+                    lock (said) Assert.Contains(said, t => t.StartsWith("Downloading the compiler"));
+                    Assert.Contains("source mods built (1)", (string)r["log"]);
                     var placed = Path.Combine(f.Mods, "Native");
                     Assert.True(File.Exists(Path.Combine(placed, "src", "mod.c")));
                     Assert.Equal(2, FakeHellForge.Links(Path.Combine(placed, "hellforge-mod.json")));

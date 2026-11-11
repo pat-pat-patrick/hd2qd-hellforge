@@ -64,10 +64,12 @@ namespace Hd2Qd.HellForge
             {
                 var o = p.StandardOutput.ReadToEndAsync();
                 var e = p.StandardError.ReadToEndAsync();
-                if (!p.WaitForExit(120000))
+                // a build of source mods may download Zig first (100 MB, 2.5 minutes on 2026-11-12)
+                bool build = args.Length > 0 && args[0] == "build-source-mods";
+                if (!p.WaitForExit(build ? 30 * 60000 : 120000))
                 {
                     try { p.Kill(); } catch (Exception) { }
-                    return new Result { Code = -1, Err = "HellForge: the command did not finish in 2 minutes" };
+                    return new Result { Code = -1, Err = "HellForge: the command did not finish in " + (build ? "30" : "2") + " minutes" };
                 }
                 return new Result { Code = p.ExitCode, Out = o.Result, Err = e.Result };
             }
