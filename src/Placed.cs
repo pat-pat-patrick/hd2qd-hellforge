@@ -30,6 +30,15 @@ namespace Hd2Qd.HellForge
             /// <summary>Each file, relative, with "size|ticks" of the library's file when placed.</summary>
             public Dictionary<string, string> Files = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             public bool Linked;
+            /// <summary>How it was made ready for HellForge's game (Port.Level), and against which
+            /// two games ("official stamp|HellForge stamp"; null: not checked).</summary>
+            public string Level, Games;
+            public int Merged, LeftOut;
+            /// <summary>Resources kept although their two originals differ, by type (hex).</summary>
+            public Dictionary<string, int> KeptDiffering = new Dictionary<string, int>();
+            /// <summary>Resources left out, by type (hex).</summary>
+            public Dictionary<string, int> LeftOutTypes = new Dictionary<string, int>();
+            public List<string> Notes = new List<string>();
         }
 
         static string RecordFile(string home) => Path.Combine(home, "hellforge", "placed.json");
@@ -48,8 +57,13 @@ namespace Hd2Qd.HellForge
                     var entry = new Entry
                     {
                         Folder = kv.Key, Library = Json.Str(e, "library"), Name = Json.Str(e, "name"), Id = Json.Str(e, "id"),
-                        Linked = Json.Bool(e, "linked"),
+                        Linked = Json.Bool(e, "linked"), Level = Json.Str(e, "level"), Games = Json.Str(e, "games"),
+                        Merged = (int)Json.Long(e, "merged"), LeftOut = (int)Json.Long(e, "left_out"), Notes = Json.Strs(e, "notes"),
                     };
+                    if (Json.Obj(e, "kept_differing") is Dictionary<string, object> kd)
+                        foreach (var k in kd) entry.KeptDiffering[k.Key] = (int)Json.Long(kd, k.Key);
+                    if (Json.Obj(e, "left_out_types") is Dictionary<string, object> lt)
+                        foreach (var k in lt) entry.LeftOutTypes[k.Key] = (int)Json.Long(lt, k.Key);
                     if (Json.Obj(e, "files") is Dictionary<string, object> files)
                         foreach (var f in files) entry.Files[f.Key] = f.Value as string;
                     mine[kv.Key] = entry;
@@ -74,6 +88,9 @@ namespace Hd2Qd.HellForge
             {
                 ["library"] = e.Library, ["name"] = e.Name, ["id"] = e.Id, ["linked"] = e.Linked,
                 ["files"] = e.Files.ToDictionary(f => f.Key, f => (object)f.Value),
+                ["level"] = e.Level, ["games"] = e.Games, ["merged"] = e.Merged, ["left_out"] = e.LeftOut,
+                ["kept_differing"] = e.KeptDiffering.ToDictionary(k => k.Key, k => (object)k.Value), ["notes"] = e.Notes.Cast<object>().ToList(),
+                ["left_out_types"] = e.LeftOutTypes.ToDictionary(k => k.Key, k => (object)k.Value),
             });
             WriteText(RecordFile(home), Json.Write(all));
         }
@@ -158,7 +175,7 @@ namespace Hd2Qd.HellForge
         /// HellForge would not take the folder as a mod, or when a mod of the same id is there
         /// already and this plugin did not place it (one of the player's own copies, which is never
         /// replaced).</summary>
-        public static Entry Put(string home, string install, string name, string libraryFolder, Hf.ModList current)
+        public static Entry Put(string home, string install, string name, string libraryFolder, Hf.ModList current, string officialData = null)
         {
             if (!Directory.Exists(libraryFolder)) throw new Refusal("no_library_folder", libraryFolder);
             var mine = Load(home, install);
@@ -173,6 +190,7 @@ namespace Hd2Qd.HellForge
             if (clash != null) throw new Refusal("same_id", clash.Name);
             var entry = new Entry { Folder = folderName, Library = Path.GetFullPath(libraryFolder), Name = name, Id = id };
             Copy(libraryFolder, Path.Combine(mods, folderName), entry);
+            Ready(home, install, officialData, entry);
             mine[folderName] = entry;
             Save(home, install, mine);
             return entry;
@@ -223,7 +241,7 @@ namespace Hd2Qd.HellForge
         }
 
         /// <summary>The placed folder made again from the library (after the library mod changed).</summary>
-        public static Entry Renew(string home, string install, Entry e)
+        public static Entry Renew(string home, string install, Entry e, string officialData = null)
         {
             var mine = Load(home, install);
             if (!mine.ContainsKey(e.Folder)) throw new HfError("not placed: " + e.Folder);
@@ -231,9 +249,44 @@ namespace Hd2Qd.HellForge
             if (Directory.Exists(folder)) Directory.Delete(folder, true);
             var fresh = new Entry { Folder = e.Folder, Library = e.Library, Name = e.Name, Id = IdOf(e.Library, e.Folder) ?? e.Id };
             Copy(e.Library, folder, fresh);
+            Ready(home, install, officialData, fresh);
             mine[e.Folder] = fresh;
             Save(home, install, mine);
             return fresh;
+        }
+
+        /// <summary>HellForge's copy made ready for its game (Port): what differs between the two games
+        /// is merged or left out in the copy; the result is recorded in the entry.</summary>
+        static void Ready(string home, string install, string officialData, Entry e)
+        {
+            var hfData = Path.Combine(install, "game", "data");
+            if (officialData == null || !File.Exists(Path.Combine(officialData, "bundles.nxa")) || !File.Exists(Path.Combine(hfData, "bundles.nxa")))
+            {
+                e.Level = Port.Level.Unknown.ToString();
+                return;
+            }
+            var r = Port.Check(home, officialData, hfData, e.Library);
+            e.Notes = Port.Apply(r, officialData, hfData, e.Library, OwnFolder(install, e.Folder));
+            e.Level = r.Level.ToString();
+            e.Games = Games(officialData, hfData);
+            e.Merged = r.Merged; e.LeftOut = r.LeftOut;
+            e.KeptDiffering = r.KeptDiffering.ToDictionary(k => k.Key.ToString("x16"), k => k.Value);
+            e.LeftOutTypes = r.LeftOutTypes.ToDictionary(k => k.Key.ToString("x16"), k => k.Value);
+        }
+
+        /// <summary>The two games' stamps, as an entry records them.</summary>
+        public static string Games(string officialData, string hfData)
+        {
+            try { return GameIndex.Stamp(officialData) + "|" + GameIndex.Stamp(hfData); }
+            catch (IOException) { return null; }
+        }
+
+        /// <summary>Whether the copy was made ready against other games than these (either was updated).</summary>
+        public static bool GamesChanged(Entry e, string install, string officialData)
+        {
+            if (officialData == null || !File.Exists(Path.Combine(officialData, "bundles.nxa"))) return false;
+            var now = Games(officialData, Path.Combine(install, "game", "data"));
+            return now != null && now != e.Games;
         }
 
         /// <summary>A placed mod taken out of HellForge: HellForge's own mod-remove, then the record.

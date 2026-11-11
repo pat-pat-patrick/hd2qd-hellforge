@@ -31,6 +31,9 @@ namespace Hd2Qd.HellForge
 
         static string Home(Dictionary<string, object> host) => (string)host["home"];
 
+        /// <summary>The official game's data folder (the manager's game folder), or null.</summary>
+        internal static string Data(Dictionary<string, object> host) => host.TryGetValue("data", out var d) ? d as string : null;
+
         // ---------------------------------------------------------------- the installation
 
         static string ConfigFile(string home) => Path.Combine(home, "hellforge", "config.json");
@@ -82,20 +85,20 @@ namespace Hd2Qd.HellForge
             var home = Home(host);
             var install = Found(home, true);
             if (install == null) return false;
-            try { return Sync(home, install).Count > 0; }
+            try { return Sync(home, install, Data(host)).Count > 0; }
             catch (Exception e) when (e is HfError || e is IOException || e is UnauthorizedAccessException) { return false; }
         }
 
         /// <summary>What Start does; returns what it changed, worded in English for the log.</summary>
-        internal static List<string> Sync(string home, string install)
+        internal static List<string> Sync(string home, string install, string officialData = null)
         {
             var said = new List<string>();
             var status = Hf.ReadStatus(install);
             if (status == null || status.Running || !status.GameCopy) return said;
             Placed.Forget(home, install);
-            foreach (var e in Placed.Load(home, install).Values.Where(Placed.Stale).ToList())
+            foreach (var e in Placed.Load(home, install).Values.Where(x => Placed.Stale(x) || Placed.GamesChanged(x, install, officialData)).ToList())
             {
-                Placed.Renew(home, install, e);
+                Placed.Renew(home, install, e, officialData);
                 said.Add("placed again: " + e.Name);
             }
             var list = Hf.ReadMods(install);
@@ -134,26 +137,55 @@ namespace Hd2Qd.HellForge
             var entry = Placed.Of(mine, modFolder);
             if (entry == null) return null;
             var lang = Words.Lang(host);
-            var facts = Scan.Of(modFolder);
-            if (facts.Any)
+            bool ported = entry.Level != null && entry.Level != Port.Level.Unknown.ToString();
+            var risks = Risks(lang, Scan.Of(modFolder), ported);
+            var port = PortLines(lang, entry);
+            if (risks.Count > 0 || entry.Level == Port.Level.Partial.ToString() || entry.Level == Port.Level.Adjusted.ToString())
                 return new Dictionary<string, object>
                 {
-                    ["text"] = Words.Get(lang, "note_risk"), ["tip"] = string.Join("\n", Risks(lang, facts)), ["colour"] = "Yellow",
+                    ["text"] = Words.Get(lang, entry.Level == Port.Level.Partial.ToString() ? "port_note_partial" : risks.Count > 0 ? "note_risk" : "port_note_adjusted"),
+                    ["tip"] = string.Join("\n", port.Select(p => p.Text).Concat(risks)), ["colour"] = "Yellow",
                 };
             if (Placed.Stale(entry))
                 return new Dictionary<string, object> { ["text"] = Words.Get(lang, "note_stale"), ["tip"] = Words.Get(lang, "note_stale_tip"), ["colour"] = "Yellow" };
             return new Dictionary<string, object> { ["text"] = Words.Get(lang, "note_in"), ["tip"] = Words.Get(lang, "note_in_tip"), ["colour"] = "Blue" };
         }
 
-        /// <summary>Each known risk of a mod on HellForge, worded.</summary>
-        internal static List<string> Risks(string lang, Scan.Facts f)
+        /// <summary>Each known risk of a mod on HellForge, worded. With ported (the two games were
+        /// compared: Port), only what the comparison cannot see: Lua that calls Boot Mod Loader's API.</summary>
+        internal static List<string> Risks(string lang, Scan.Facts f, bool ported = false)
         {
             var r = new List<string>();
-            if (f.RenderConfig) r.Add(Words.Get(lang, "risk_render_config"));
-            if (f.Strings) r.Add(Words.Get(lang, "risk_strings"));
+            if (f.RenderConfig && !ported) r.Add(Words.Get(lang, "risk_render_config"));
+            if (f.Strings && !ported) r.Add(Words.Get(lang, "risk_strings"));
             if (f.BootModLoaderApi) r.Add(Words.Get(lang, "risk_bml"));
             return r;
         }
+
+        internal static string TypeName(string lang, string hex) =>
+            Words.Get(lang, Port.TypeKey(ulong.TryParse(hex, System.Globalization.NumberStyles.HexNumber, null, out var t) ? t : 0));
+
+        static string Counted(string lang, Dictionary<string, int> byType) =>
+            string.Join(Words.Get(lang, "list_join"), byType.OrderByDescending(kv => kv.Value).Select(kv => TypeName(lang, kv.Key) + " " + kv.Value));
+
+        /// <summary>What HellForge's copy of a mod is, as lines and colours (none: as it is).</summary>
+        internal static List<(string Text, string Colour)> PortLines(string lang, string level, int merged, Dictionary<string, int> leftOut, Dictionary<string, int> kept)
+        {
+            var lines = new List<(string, string)>();
+            if (level == null) return lines;
+            if (level == Port.Level.Unknown.ToString()) { lines.Add((Words.Get(lang, "port_unknown"), "Muted")); return lines; }
+            if (leftOut != null && leftOut.Count > 0) lines.Add((Words.F(lang, "port_left_out", Counted(lang, leftOut)), "Yellow"));
+            if (merged > 0) lines.Add((Words.F(lang, "port_merged", merged), "Blue"));
+            if (kept != null && kept.Count > 0) lines.Add((Words.F(lang, "port_kept", Counted(lang, kept)), "Yellow"));
+            return lines;
+        }
+
+        internal static List<(string Text, string Colour)> PortLines(string lang, Port.Report r) =>
+            r == null ? new List<(string, string)>() : PortLines(lang, r.Level.ToString(), r.Merged,
+                r.LeftOutTypes.ToDictionary(k => k.Key.ToString("x16"), k => k.Value), r.KeptDiffering.ToDictionary(k => k.Key.ToString("x16"), k => k.Value));
+
+        internal static List<(string Text, string Colour)> PortLines(string lang, Placed.Entry e) =>
+            PortLines(lang, e.Level, e.Merged, e.LeftOutTypes, e.KeptDiffering);
 
         // ---------------------------------------------------------------- command line (English, as the manager's own)
 
@@ -202,8 +234,11 @@ namespace Hd2Qd.HellForge
                         {
                             if (command == "hellforge-add")
                             {
-                                var e = Placed.Put(home, install, m.Name, m.Path, list);
-                                o.WriteLine(m.Name + ": in HellForge as " + e.Folder + (e.Linked ? " (hard links)" : " (copied: another drive)"));
+                                var e = Placed.Put(home, install, m.Name, m.Path, list, Data(host));
+                                o.WriteLine(m.Name + ": in HellForge as " + e.Folder + (e.Linked ? " (hard links)" : " (copied: another drive)") + ", " + e.Level +
+                                            (e.Merged > 0 ? ", " + e.Merged + " text tables merged onto HellForge's" : "") + (e.LeftOut > 0 ? ", " + e.LeftOut + " render configurations left out" : "") +
+                                            (e.KeptDiffering.Count > 0 ? ", kept although the games differ: " + string.Join(", ", e.KeptDiffering.Select(k => TypeName("en", k.Key) + " " + k.Value)) : ""));
+                                foreach (var n in e.Notes) o.WriteLine("  " + n);
                                 var risks = Risks("en", Scan.Of(m.Path));
                                 foreach (var r in risks) o.WriteLine("  " + r);
                                 list = Hf.ReadMods(install);

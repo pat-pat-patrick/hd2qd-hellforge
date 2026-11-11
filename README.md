@@ -11,6 +11,7 @@ A plugin of [HD2 Mod Quick Deploy](https://github.com/pat-pat-patrick/hd2-mod-cl
 | Sessions | Start a session, see each step (preparing, waiting for Steam, running, how it ended), end it |
 | Mods | HellForge's own list in its three co-op groups, with the modlist code: switch, reorder, pack options |
 | From the library | Put library mods into HellForge's `mods` folder: hard links on the same drive, so nothing is copied and the library is never written |
+| Made for the official game | Each resource a library mod replaces is compared between the official game and HellForge's older one. The same in both, or the mod's own: used as it is. Text tables: the mod's changed lines carried onto HellForge's table. Render configuration, shader libraries and replaced game Lua scripts: left out. Anything else that differs: used as it is, and named |
 | Only affects me | Mark a code mod `"coop": "per-player"` in HellForge's copy; marked again when an update comes without it |
 | Warnings | A note on a library mod that replaces the render configuration or game text tables built for the official game, or calls Boot Mod Loader's own API |
 | Profile and settings | Profile (and new profiles), galactic war, co-op, play with strangers, sandbox, Forge Credits share, language packs |

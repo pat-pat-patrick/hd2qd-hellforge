@@ -132,7 +132,7 @@ namespace Hd2Qd.HellForge
                             try
                             {
                                 // the library's changes brought over, the "only affects me" marks made again
-                                if (!syncedOnce) { synced = Sync(home, inst).Count; syncedOnce = true; }
+                                if (!syncedOnce) { synced = Sync(home, inst, Data(host)).Count; syncedOnce = true; }
                                 var m = Hf.ReadMods(inst);
                                 var st = Hf.ParseSettings(Hf.Ask(inst, "settings"));
                                 var pr = Hf.ParseProfiles(Hf.Ask(inst, "profiles"));
@@ -377,8 +377,11 @@ namespace Hd2Qd.HellForge
                 if (marks.Count > 0) names.Children.Add(new TextBlock { Text = string.Join("  ·  ", marks), FontSize = 12, Foreground = B("Muted"), Margin = new Thickness(0, 2, 0, 0) });
                 if (mine != null)
                 {
-                    var risks = Risks(lang, Scan.Of(mine.Library ?? ""));
-                    foreach (var r in risks) names.Children.Add(new TextBlock { Text = r, FontSize = 12, Foreground = B("Yellow"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 2, 0, 0) });
+                    bool ported = mine.Level != null && mine.Level != Port.Level.Unknown.ToString();
+                    foreach (var (t, c) in PortLines(lang, mine))
+                        names.Children.Add(new TextBlock { Text = t, FontSize = 12, Foreground = B(c), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 2, 0, 0) });
+                    foreach (var r in Risks(lang, Scan.Of(mine.Library ?? ""), ported))
+                        names.Children.Add(new TextBlock { Text = r, FontSize = 12, Foreground = B("Yellow"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 2, 0, 0) });
                 }
                 if (m.Options.Count > 1 || m.Options.Any(o => o.Variants.Count > 0)) names.Children.Add(Options(m));
                 Cell(1, names);
@@ -500,6 +503,8 @@ namespace Hd2Qd.HellForge
                 public string Name, Path, Id, Clash;
                 public bool Enabled;
                 public Scan.Facts Facts;
+                /// <summary>What HellForge's copy would be (null: not compared).</summary>
+                public Port.Report Port;
             }
 
             List<LibMod> library;
@@ -514,7 +519,7 @@ namespace Hd2Qd.HellForge
                 panel.Children.Add(Small(T("add_intro"), new Thickness(0, 0, 0, 8)));
                 if (library == null)
                 {
-                    panel.Children.Add(new TextBlock { Text = T("reading") });
+                    panel.Children.Add(new TextBlock { Text = T("port_reading") });
                     LoadLibrary();
                     return;
                 }
@@ -534,7 +539,12 @@ namespace Hd2Qd.HellForge
                     else if (!l.Enabled) muted.Add(T("add_off_in_library"));
                     foreach (var n in muted) row.Children.Add(new TextBlock { Text = n, FontSize = 12, Foreground = B("Muted"), Margin = new Thickness(32, 0, 0, 2), TextWrapping = TextWrapping.Wrap });
                     if (can)
-                        foreach (var n in Risks(lang, l.Facts)) row.Children.Add(new TextBlock { Text = n, FontSize = 12, Foreground = B("Yellow"), Margin = new Thickness(32, 0, 0, 2), TextWrapping = TextWrapping.Wrap });
+                    {
+                        foreach (var (t, c) in PortLines(lang, l.Port))
+                            row.Children.Add(new TextBlock { Text = t, FontSize = 12, Foreground = B(c), Margin = new Thickness(32, 0, 0, 2), TextWrapping = TextWrapping.Wrap });
+                        foreach (var n in Risks(lang, l.Facts, l.Port != null && l.Port.Level != HellForge.Port.Level.Unknown))
+                            row.Children.Add(new TextBlock { Text = n, FontSize = 12, Foreground = B("Yellow"), Margin = new Thickness(32, 0, 0, 2), TextWrapping = TextWrapping.Wrap });
+                    }
                     panel.Children.Add(row);
                 }
                 var go = Btn(T("add_go"), true, () => AddPicked());
@@ -548,13 +558,26 @@ namespace Hd2Qd.HellForge
                 try
                 {
                     var current = mods;
-                    library = await Task.Run(() => Library(host).Select(l =>
+                    var inst = install;
+                    var official = Data(host);
+                    library = await Task.Run(() =>
                     {
-                        var id = Directory.Exists(l.Path) ? Placed.IdOf(l.Path, Placed.FolderName(l.Name)) : null;
-                        var clash = id == null || current == null ? null
-                            : current.Mods.FirstOrDefault(m => string.Equals(m.Id, id, StringComparison.OrdinalIgnoreCase) && PlacedOf(m) == null)?.Name;
-                        return new LibMod { Name = l.Name, Path = l.Path, Enabled = l.Enabled, Id = id, Clash = clash, Facts = Scan.Of(l.Path) };
-                    }).ToList());
+                        var list = Library(host).Select(l =>
+                        {
+                            var id = Directory.Exists(l.Path) ? Placed.IdOf(l.Path, Placed.FolderName(l.Name)) : null;
+                            var clash = id == null || current == null ? null
+                                : current.Mods.FirstOrDefault(m => string.Equals(m.Id, id, StringComparison.OrdinalIgnoreCase) && PlacedOf(m) == null)?.Name;
+                            return new LibMod { Name = l.Name, Path = l.Path, Enabled = l.Enabled, Id = id, Clash = clash, Facts = Scan.Of(l.Path) };
+                        }).ToList();
+                        // what each would become on HellForge: the two games compared once for all
+                        try
+                        {
+                            var reports = HellForge.Port.CheckMany(home, official, Path.Combine(inst, "game", "data"), list.Where(l => l.Id != null && l.Clash == null).Select(l => l.Path));
+                            foreach (var l in list) if (reports.TryGetValue(l.Path, out var r)) l.Port = r;
+                        }
+                        catch (Exception e) when (e is IOException || e is UnauthorizedAccessException || e is InvalidDataException) { }
+                        return list;
+                    });
                 }
                 catch (Exception e) when (e is IOException || e is UnauthorizedAccessException || e is InvalidOperationException)
                 {
@@ -578,7 +601,7 @@ namespace Hd2Qd.HellForge
                     var list = Hf.ReadMods(inst);
                     foreach (var c in chosen)
                     {
-                        try { Placed.Put(home, inst, c.Name, c.Path, list); added++; list = Hf.ReadMods(inst); }
+                        try { Placed.Put(home, inst, c.Name, c.Path, list, Data(host)); added++; list = Hf.ReadMods(inst); }
                         catch (HfError e) { refused.Add(c.Name + ": " + Refused(lang, e)); }
                         catch (Exception e) when (e is IOException || e is UnauthorizedAccessException) { refused.Add(c.Name + ": " + e.Message); }
                     }
