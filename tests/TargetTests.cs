@@ -51,6 +51,7 @@ namespace HellForge.Tests
                     Assert.True((bool)t["found"]);
                     Assert.Equal("luajit", t["lua"]);                          // HellForge's game is older than the 10-20 update
                     Assert.Equal(2L, Plugin.TargetStatus(host)["pending"]);
+                    Assert.All(((Dictionary<string, object>)Plugin.TargetStatus(host)["mods"]).Values, v => Assert.Equal("pending", v));   // each row: not yet there
 
                     var r = Plugin.TargetDeploy(host);
                     Assert.Empty((List<object>)r["refused"]);
@@ -66,6 +67,7 @@ namespace HellForge.Tests
                     // the manager's last mod wins; HellForge's top one does
                     Assert.Equal(new[] { packB, packA }, f.Order);
                     Assert.Equal(0L, Plugin.TargetStatus(host)["pending"]);
+                    Assert.All(((Dictionary<string, object>)Plugin.TargetStatus(host)["mods"]).Values, v => Assert.Equal("deployed", v));  // each row: there as the library has it
                     Assert.Empty(Directory.GetDirectories(f.Mods, ".hd2qd-*"));
 
                     // the same list again: nothing placed again

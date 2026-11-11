@@ -58,9 +58,17 @@ namespace Hd2Qd.HellForge
             bool running = false;
             try { running = Hf.ReadStatus(install)?.Running == true; } catch (Exception e) when (e is HfError || e is IOException) { }
             int pending = 0;
-            try { pending = Deployed.Pending(home, install, Data(host), Mods(host)); }
+            var states = new Dictionary<string, object>();
+            try
+            {
+                var wants = Mods(host);
+                var each = Deployed.States(home, install, Data(host), wants);
+                pending = Deployed.Pending(home, install, wants, each);
+                foreach (var kv in each) states[kv.Key] = kv.Value;
+            }
             catch (Exception e) when (e is IOException || e is UnauthorizedAccessException) { }
-            return new Dictionary<string, object> { ["pending"] = (long)pending, ["running"] = running };
+            // each enabled mod's state, for the manager's rows ("deployed" / "pending")
+            return new Dictionary<string, object> { ["pending"] = (long)pending, ["running"] = running, ["mods"] = states };
         }
 
         public static Dictionary<string, object> TargetDeploy(Dictionary<string, object> host)
@@ -239,15 +247,27 @@ namespace Hd2Qd.HellForge
             officialData != null && File.Exists(System.IO.Path.Combine(officialData, "bundles.nxa")) ? Placed.Games(officialData, HfData(install)) : "none";
 
         /// <summary>How many mods a deploy would place, place again or take out.</summary>
-        public static int Pending(string home, string install, string officialData, List<Want> wants)
+        /// <summary>Each mod of the list in use: "deployed" (in HellForge as the library has it)
+        /// or "pending" (a deploy would place it again), by the same test as Pending.</summary>
+        public static Dictionary<string, string> States(string home, string install, string officialData, List<Want> wants)
         {
             var mine = Load(home, install);
             var games = Games(officialData, install);
-            int n = wants.Count(w => !mine.TryGetValue(w.Id, out var e) || e.Signature != Signature(w, games)
-                                     || (e.Folder != null && !Directory.Exists(System.IO.Path.Combine(Install.Mods(install), e.Folder))));
-            n += mine.Keys.Count(id => wants.All(w => !string.Equals(w.Id, id, StringComparison.OrdinalIgnoreCase)));
-            return n;
+            var states = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var w in wants.Where(w => w.Id != null))
+                states[w.Id] = !mine.TryGetValue(w.Id, out var e) || e.Signature != Signature(w, games)
+                               || (e.Folder != null && !Directory.Exists(System.IO.Path.Combine(Install.Mods(install), e.Folder))) ? "pending" : "deployed";
+            return states;
         }
+
+        public static int Pending(string home, string install, string officialData, List<Want> wants) =>
+            Pending(home, install, wants, States(home, install, officialData, wants));
+
+        /// <summary>Pending from States already made: the mods a deploy would place again, and
+        /// those it would take out.</summary>
+        public static int Pending(string home, string install, List<Want> wants, Dictionary<string, string> states) =>
+            states.Values.Count(v => v == "pending")
+            + Load(home, install).Keys.Count(id => wants.All(w => !string.Equals(w.Id, id, StringComparison.OrdinalIgnoreCase)));
 
         public static Result Run(string home, string install, string officialData, List<Want> wants, string lang)
         {

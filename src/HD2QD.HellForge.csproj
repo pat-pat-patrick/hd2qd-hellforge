@@ -12,7 +12,7 @@
     <Nullable>disable</Nullable>
     <AssemblyName>HD2QD.HellForge</AssemblyName>
     <RootNamespace>Hd2Qd.HellForge</RootNamespace>
-    <Version>0.8.2</Version>
+    <Version>0.8.3</Version>
     <Product>HD2QD HellForge</Product>
     <Company>pat-pat-patrick</Company>
     <Copyright>MIT License</Copyright>
