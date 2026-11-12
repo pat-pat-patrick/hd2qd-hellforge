@@ -12,7 +12,7 @@ A plugin for [HD2 Mod Quick Deploy](https://github.com/pat-pat-patrick/hd2-mod-c
 | Mods | HellForge's mod list in its three co-op groups, with the modlist code: enabling, ordering and pack options |
 | Deploy target | In a Quick Deploy with deploy targets, HellForge can be selected above the library. The main list then shows HellForge's own enabled mods, order and options, and Deploy places each enabled mod in HellForge's `mods` folder as a separate folder (hard links on the same drive; the library is never modified), in the list's order and enabled. Disabled mods are removed |
 | Mods made for the official game | Each resource a library mod replaces is compared between the official game and HellForge's older version. Resources that are identical in both, or that belong to the mod, are used unchanged. Text tables: the mod's changed lines are merged into HellForge's table. Render configuration, shader libraries and replaced game Lua scripts are not deployed. Other differing resources are deployed unchanged and listed |
-| This player only | Marks a code mod `"coop": "per-player"` in HellForge's copy, and marks it again when an update arrives without the mark |
+| This player only | Marks a code mod `"coop": "per-player"` in HellForge's copy, and marks it again when an update arrives without the mark. "Set all gameplay mods to this player only" marks every shared gameplay code mod except HellForge's own, including mods added later; while it is on, each mod's own switch follows it and is locked |
 | Warnings | A note on a library mod that replaces the render configuration or game text tables made for the official game, or that calls Boot Mod Loader's own API |
 | Profile and settings | Profile (including new profiles), galactic war, co-op, play with strangers, sandbox, Forge Credits share, language packs |
 | Logs | Each session's logs, export and crash report (nothing is uploaded) |
@@ -21,7 +21,8 @@ A plugin for [HD2 Mod Quick Deploy](https://github.com/pat-pat-patrick/hd2-mod-c
 ## Method
 
 The plugin uses only what HellForge documents for external launchers
-(`app\sdk\docs\external-launchers.md`): `HellForge.Cli.exe` and the `mods` folder. It never writes
+(`app\sdk\docs\external-launchers.md`): `HellForge.Cli.exe`, the `mods` folder and its
+`hellforge-mods.json`. It never writes
 to HellForge's game copy, `app` folder, backend or network block, and, like HellForge, refuses mod
 changes while a session is running.
 
