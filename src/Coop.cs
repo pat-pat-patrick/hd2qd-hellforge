@@ -169,6 +169,17 @@ namespace Hd2Qd.HellForge
 
         static string Key(Hf.Mod m) => m.Id + "|" + m.Version;
 
+        /// <summary>Why a mod's own switch cannot be changed while the setting is on: "all" (the
+        /// setting decides: it would mark the mod again at the next read, so a switch of its own
+        /// would only seem to work; the user, 2026-11-12: 锁定跟随总开关), "refused" (HellForge
+        /// would not take it per-player), or null (its switch is free: the setting is off, or the
+        /// mod is not one the setting covers).</summary>
+        public static string Lock(bool allOn, IDictionary<string, string> refused, Hf.Mod m)
+        {
+            if (!allOn || !Applies(m) || (m.Group != "gameplay" && m.Group != "per-player")) return null;
+            return refused.ContainsKey(Key(m)) ? "refused" : "all";
+        }
+
         /// <summary>The setting turned on (every shared gameplay code mod marked now) or off (the
         /// marks it made taken out; a mod marked by hand is a choice of its own and is kept only
         /// when it was marked before the setting). Returns the names marked, and the refusals.</summary>

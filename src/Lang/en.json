@@ -167,6 +167,8 @@
   "all_only_me_refused": "HellForge requires it to remain shared: {0}",
   "all_only_me_refused_tell": "HellForge does not allow these mods to be per-player, because their changes must be identical on every computer. They remain shared:",
   "only_me": "This player only",
+  "only_me_by_all": "Controlled by \"Set all gameplay mods to this player only\" above. Turn that setting off to set each mod individually.",
+  "only_me_refused": "HellForge does not allow this mod to be per-player, because its changes must be identical on every computer.",
   "only_me_tip": "Treated as this player's own in co-op (\"coop\": \"per-player\"): not part of the modlist code and not downloaded by other players.",
   "only_me_ask": "Set \"{0}\" to this player only?\n\nUse this only for mods that each player also uses individually in the official game. A mod that changes gameplay for all players makes the players' games inconsistent in co-op when set this way.\n\nThe setting is written into HellForge's copy of the mod and is written again when the mod is updated.",
   "move_up": "Move up (loads later and takes precedence over the mod above)",

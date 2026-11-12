@@ -383,6 +383,7 @@ namespace Hd2Qd.HellForge
                 bool bingusOn = mods.Mods.Any(m => m.Enabled && IsBingus(m));
                 if (luaOn && !bingusOn) body.Children.Add(Line(T("no_bingus"), "Yellow"));
 
+                allOn = Coop.AllOn(home); refusedAll = Coop.Refused(home);
                 RenderAllOnlyMe();
 
                 // a manager with deploy targets hands host["target"]; an older one (0.19.0 and
@@ -412,15 +413,15 @@ namespace Hd2Qd.HellForge
             void RenderAllOnlyMe()
             {
                 var row = new DockPanel { Margin = new Thickness(0, 10, 0, 4), MaxWidth = 860, HorizontalAlignment = HorizontalAlignment.Left };
-                var sw = new CheckBox { Style = S("Switch"), IsChecked = Coop.AllOn(home), IsEnabled = !Locked, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 2, 16, 0) };
+                var sw = new CheckBox { Style = S("Switch"), IsChecked = allOn, IsEnabled = !Locked, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 2, 16, 0) };
                 sw.Click += (s, e) => AllOnlyMe(sw.IsChecked == true);
                 DockPanel.SetDock(sw, Dock.Left);
                 row.Children.Add(sw);
                 var text = new StackPanel();
                 text.Children.Add(new TextBlock { Text = T("all_only_me"), FontSize = 14, FontWeight = FontWeights.SemiBold });
                 text.Children.Add(Small(T("all_only_me_hint"), new Thickness(0, 2, 0, 0)));
-                if (Coop.AllOn(home))
-                    foreach (var r in Coop.Refused(home).Values)
+                if (allOn)
+                    foreach (var r in refusedAll.Values)
                         text.Children.Add(new TextBlock { Text = T("all_only_me_refused", r), FontSize = 12, Foreground = B("Yellow"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 2, 0, 0) });
                 row.Children.Add(text);
                 body.Children.Add(row);
@@ -442,6 +443,10 @@ namespace Hd2Qd.HellForge
                 Foot(on ? T("all_only_me_done", marked) : T("all_only_me_off"));
                 if (refusedNow.Count > 0) Tell(T("all_only_me_refused_tell") + "\n" + string.Join("\n", refusedNow));
             }
+
+            // the setting as the last render read it, for each mod's own switch
+            bool allOn;
+            Dictionary<string, string> refusedAll = new Dictionary<string, string>();
 
             static bool IsBingus(Hf.Mod m) => m.Folder != null && File.Exists(Path.Combine(m.Folder, "BingusSharedLoader-manifest.json"));
 
@@ -489,11 +494,16 @@ namespace Hd2Qd.HellForge
 
                 if (Coop.Applies(m))
                 {
-                    var only = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 16, 0), ToolTip = T("only_me_tip") };
-                    var c = new CheckBox { Style = S("Switch"), IsChecked = Coop.IsPerPlayer(m), IsEnabled = !Locked, VerticalAlignment = VerticalAlignment.Center };
+                    // while "every gameplay mod" is on, it decides: the mod's own switch shows it and is locked
+                    var lockedBy = Coop.Lock(allOn, refusedAll, m);
+                    var only = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 16, 0),
+                                                ToolTip = lockedBy == "all" ? T("only_me_by_all") : lockedBy == "refused" ? T("only_me_refused") : T("only_me_tip") };
+                    ToolTipService.SetShowOnDisabled(only, true);
+                    var c = new CheckBox { Style = S("Switch"), IsChecked = Coop.IsPerPlayer(m), IsEnabled = !Locked && lockedBy == null, VerticalAlignment = VerticalAlignment.Center };
                     c.Click += (s, e) => OnlyMe(m, c.IsChecked == true);
                     only.Children.Add(c);
-                    only.Children.Add(new TextBlock { Text = T("only_me"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0) });
+                    only.Children.Add(new TextBlock { Text = T("only_me"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0), Foreground = lockedBy != null ? B("Muted") : B("Ink") });
+                    if (lockedBy != null) c.Opacity = 0.45;             // the Switch style has no look of its own for locked
                     Cell(2, only);
                 }
 
@@ -551,6 +561,7 @@ namespace Hd2Qd.HellForge
 
             void OnlyMe(Hf.Mod m, bool on)
             {
+                if (Coop.Lock(allOn, refusedAll, m) != null) { Render(); return; }
                 if (on && !Ask(T("only_me_ask", m.Name), T("only_me"))) { Render(); return; }
                 var inst = install;
                 Change(() =>

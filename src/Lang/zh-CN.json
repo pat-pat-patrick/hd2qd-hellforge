@@ -162,6 +162,8 @@
   "all_only_me_refused": "HellForge 要求保持联机共享：{0}",
   "all_only_me_refused_tell": "以下 MOD 的改动须在所有玩家的电脑上保持一致，HellForge 不允许将其设为仅本玩家生效，仍保持联机共享：",
   "only_me": "仅本玩家生效",
+  "only_me_by_all": "由上方“所有玩法 MOD 设为仅本玩家生效”控制。关闭该设置后可逐个设置。",
+  "only_me_refused": "此 MOD 的改动须在所有玩家的电脑上保持一致，HellForge 不允许将其设为仅本玩家生效。",
   "only_me_tip": "联机时视为本玩家独立使用的 MOD（\"coop\": \"per-player\"）：不计入联机代码，其他玩家不会下载。",
   "only_me_ask": "是否将“{0}”设为仅本玩家生效？\n\n仅适用于在原版游戏中也由玩家各自使用的 MOD。影响所有玩家玩法的 MOD 设为仅本玩家生效后，联机时各玩家的游戏将不一致。\n\n该设置写入 HellForge 中的 MOD 副本，MOD 更新后将自动重新写入。",
   "move_up": "上移（后加载，优先于上方的 MOD）",

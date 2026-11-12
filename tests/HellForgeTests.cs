@@ -350,6 +350,16 @@ namespace HellForge.Tests
                 Assert.Empty(list.Problems);
                 Assert.Single(Coop.Refused(f.Home));
 
+                // while it is on, each covered mod's own switch is locked (the user, 2026-11-12):
+                // marked ones follow the setting, the refused one shows why; HellForge's own is free
+                var refusedNow = Coop.Refused(f.Home);
+                Assert.Equal("all", Coop.Lock(true, refusedNow, list.Mods.Single(m => m.Id == "a.free")));
+                Assert.Equal("all", Coop.Lock(true, refusedNow, list.Mods.Single(m => m.Id == "c.hand")));
+                Assert.Equal("refused", Coop.Lock(true, refusedNow, list.Mods.Single(m => m.Id == "b.net")));
+                Assert.Null(Coop.Lock(true, refusedNow, list.Mods.Single(m => m.Id == "hf.bundled")));
+                Assert.Null(Coop.Lock(true, refusedNow, new Hf.Mod { Id = "e.look", Group = "cosmetic", Tags = { "code" } }));
+                Assert.Null(Coop.Lock(false, refusedNow, list.Mods.Single(m => m.Id == "a.free")));
+
                 // the refused one is not tried again; a mod added later is marked by Start
                 f.CodeFolder("d.new", "New Mod");
                 var said = Plugin.Sync(f.Home, f.Install);
