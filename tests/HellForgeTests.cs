@@ -379,6 +379,45 @@ namespace HellForge.Tests
             }
         }
 
+        /// <summary>The tags for what a library mod holds, by HellForge's kinds of mod: C (sources
+        /// HellForge builds), DLL (prebuilt), STATS; several side by side; none for a data mod.</summary>
+        [Fact]
+        public void LibraryModsAreTaggedByHellForgesKindsOfMod()
+        {
+            using (var f = new FakeHellForge())
+            {
+                string Mod(string name, string code, bool src, bool stats, bool patch = false)
+                {
+                    var d = Path.Combine(f.Home, "lib", name);
+                    Directory.CreateDirectory(d);
+                    if (code != null) File.WriteAllText(Path.Combine(d, "hellforge-mod.json"), "{\"id\": \"x." + name + "\", \"name\": \"" + name + "\"" + code + "}");
+                    if (src) { Directory.CreateDirectory(Path.Combine(d, "src")); File.WriteAllText(Path.Combine(d, "src", "mod.c"), ""); }
+                    if (stats) File.WriteAllText(Path.Combine(d, "hellforge-stats.json"), "{}");
+                    if (patch) File.WriteAllText(Path.Combine(d, "9ba626afa44a3aa3.patch_0"), "x");
+                    return d;
+                }
+                const string Code = ", \"code\": {\"dll\": \"m.dll\", \"sdk\": 16}";
+                const string Prebuilt = ", \"code\": {\"dll\": \"m.dll\", \"sdk\": 16, \"prebuilt\": true}";
+                var host = new Dictionary<string, object> { ["home"] = f.Home, ["lang"] = "en" };
+                string Texts(string d) => string.Join(" ", (Plugin.ModTags(d, host) ?? new List<Dictionary<string, object>>()).Select(t => (string)t["text"]));
+
+                Assert.Equal("C", Texts(Mod("built", Code, src: true, stats: false)));
+                Assert.Equal("DLL", Texts(Mod("prebuilt", Code, src: false, stats: false)));
+                var both = Mod("own-dll", Prebuilt, src: true, stats: false);
+                Assert.Equal("DLL", Texts(both));
+                Assert.DoesNotContain("not included", (string)Plugin.ModTags(both, host)[0]["tip"]);
+                Assert.Equal("STATS", Texts(Mod("stats", "", src: false, stats: true)));
+                var mixed = Mod("mixed", Code, src: true, stats: true);
+                Assert.Equal("C STATS", Texts(mixed));
+                Assert.DoesNotContain("no code", (string)Plugin.ModTags(mixed, host)[1]["tip"]);
+                Assert.Equal("", Texts(Mod("data", "", src: false, stats: false, patch: true)));
+                Assert.Equal("", Texts(Mod("official", null, src: false, stats: false, patch: true)));
+                host["lang"] = "zh-CN";
+                Assert.Equal("C 数值", Texts(Path.Combine(f.Home, "lib", "mixed")));
+                Assert.Equal("该 MOD 按字段名修改游戏数值，不含代码。", (string)Plugin.ModTags(Path.Combine(f.Home, "lib", "stats"), host)[0]["tip"]);
+            }
+        }
+
         // ---------------------------------------------------------------- what goes wrong on HellForge
 
         [Fact]

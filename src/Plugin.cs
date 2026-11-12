@@ -128,6 +128,59 @@ namespace Hd2Qd.HellForge
             return said;
         }
 
+        // ---------------------------------------------------------------- what a library mod holds (the user, 2026-11-12)
+
+        /// <summary>The kinds of HellForge mod a folder is (app\sdk\docs\modding\concepts.md, "Kinds of
+        /// mods"; one mod can be several): "c" (code.dll with src\, built by HellForge at deploy),
+        /// "dll" (a prebuilt DLL: no src\, or code.prebuilt), "stats" (hellforge-stats.json). Data
+        /// mods, cosmetic packs and native edits get none, as official-game mods have none.
+        /// srcToo: the folder ships src\ beside a prebuilt DLL.</summary>
+        internal static List<string> KindsOf(string folder, out bool srcToo)
+        {
+            var kinds = new List<string>();
+            srcToo = false;
+            var manifest = Placed.CodeManifest(folder);
+            if (manifest != null && Json.Obj(File.ReadAllText(manifest, Encoding.UTF8)) is Dictionary<string, object> m
+                && m.TryGetValue("code", out var c) && c is Dictionary<string, object> code)
+            {
+                bool src = Directory.Exists(Path.Combine(folder, "src"));
+                bool prebuilt = Json.Bool(code, "prebuilt");
+                kinds.Add(src && !prebuilt ? "c" : "dll");
+                srcToo = src && prebuilt;
+            }
+            if (File.Exists(Path.Combine(folder, "hellforge-stats.json"))) kinds.Add("stats");
+            return kinds;
+        }
+
+        static readonly Dictionary<string, (DateTime At, List<string> Kinds, bool SrcToo)> kindsSeen =
+            new Dictionary<string, (DateTime, List<string>, bool)>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>The manager's tags for what a library mod holds: C, DLL, STATS (数值), drawn like
+        /// its LUA tag. Called for every mod at every state read, so each folder is looked at
+        /// again only after 10 s.</summary>
+        public static List<Dictionary<string, object>> ModTags(string modFolder, Dictionary<string, object> host)
+        {
+            List<string> kinds; bool srcToo;
+            lock (kindsSeen)
+            {
+                if (kindsSeen.TryGetValue(modFolder, out var seen) && (DateTime.UtcNow - seen.At).TotalSeconds < 10) { kinds = seen.Kinds; srcToo = seen.SrcToo; }
+                else
+                {
+                    try { kinds = KindsOf(modFolder, out srcToo); }
+                    catch (Exception e) when (e is IOException || e is UnauthorizedAccessException) { kinds = new List<string>(); srcToo = false; }
+                    kindsSeen[modFolder] = (DateTime.UtcNow, kinds, srcToo);
+                }
+            }
+            if (kinds.Count == 0) return null;
+            var lang = Words.Lang(host);
+            bool code = kinds.Contains("c") || kinds.Contains("dll");
+            return kinds.Select(k => new Dictionary<string, object>
+            {
+                ["text"] = Words.Get(lang, "kind_" + k),
+                ["tip"] = Words.Get(lang, k == "dll" && srcToo ? "kind_dll_tip_with_src" : k == "stats" && code ? "kind_stats_tip_with_code" : "kind_" + k + "_tip"),
+            }).ToList();
+        }
+
         // ---------------------------------------------------------------- notes on the library's rows
 
         static Dictionary<string, Placed.Entry> notesPlaced;
