@@ -41,8 +41,11 @@ namespace Hd2Qd.HellForge
         static void SaveChoices(string home, Dictionary<string, string> d) =>
             Placed.WriteText(ChoiceFile(home), Json.Write(d.ToDictionary(kv => kv.Key, kv => (object)new Dictionary<string, object> { ["original"] = kv.Value })));
 
-        /// <summary>Whether the switch applies: a code mod that is not HellForge's own.</summary>
-        public static bool Applies(Hf.Mod m) => m.Has("code") && !m.Has("bundled") && !m.Has("local-stats");
+        /// <summary>Whether the switch applies: a code mod that is not HellForge's own and not
+        /// cosmetic. A cosmetic mod ("gameplay": false, such as Super Callouts and Speed Dial for
+        /// Liberty) is never compared, so "only affects me" would change nothing (the user,
+        /// 2026-11-14: the switch showed in the cosmetic group).</summary>
+        public static bool Applies(Hf.Mod m) => m.Has("code") && !m.Has("bundled") && !m.Has("local-stats") && m.Group != "cosmetic";
 
         static readonly Regex CoopValue = new Regex("\"coop\"\\s*:\\s*\"([^\"]*)\"");
 

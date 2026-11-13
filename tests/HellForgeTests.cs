@@ -318,6 +318,8 @@ namespace HellForge.Tests
                 // HellForge's own mods are never offered the switch
                 Assert.False(Coop.Applies(new Hf.Mod { Tags = { "code", "bundled" } }));
                 Assert.False(Coop.Applies(new Hf.Mod { Tags = { "pack", "lua" } }));
+                Assert.False(Coop.Applies(new Hf.Mod { Group = "cosmetic", Tags = { "code" } }));   // never compared
+                Assert.True(Coop.Applies(new Hf.Mod { Group = "per-player", Tags = { "code" } }));
             }
         }
 
