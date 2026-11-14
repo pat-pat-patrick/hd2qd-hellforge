@@ -209,11 +209,11 @@ namespace Hd2Qd.HellForge
             if (!AllOn(home)) return (marked, refusedNow);
             var refused = Refused(home);
             var made = Made(home);
-            var list = known ?? Hf.ReadMods(install);              // the deploy's list when it has one
+            var list = known ?? ModsCache.Read(home, install);      // the deploy's list when it has one
             foreach (var m in list.Mods.Where(x => x.Group == "gameplay" && Applies(x) && !refused.ContainsKey(Key(x))).ToList())
             {
                 Set(home, install, m, true);
-                var after = Hf.ReadMods(install);
+                var after = ModsCache.Read(home, install);          // read anew: marking changed the folder
                 var now = after.Mods.FirstOrDefault(x => string.Equals(x.Id, m.Id, StringComparison.OrdinalIgnoreCase));
                 var problem = after.Problems.FirstOrDefault(p => p.IndexOf(m.Name ?? "\0", StringComparison.OrdinalIgnoreCase) >= 0
                                                               || p.IndexOf(m.Id, StringComparison.OrdinalIgnoreCase) >= 0

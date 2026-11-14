@@ -85,7 +85,7 @@ namespace Hd2Qd.HellForge
             if (r.SourcePlaced > 0) BuildSources(install, host, lang, r);
             try
             {
-                var list = r.List ?? Hf.ReadMods(install);
+                var list = r.List ?? ModsCache.Read(home, install);
                 var again = Coop.Reapply(home, install, list);
                 // a code mod placed now is not in the list read before placing: its group (gameplay or
                 // per-player) is HellForge's to say, so the marks read the list again, only then (and
@@ -94,6 +94,8 @@ namespace Hd2Qd.HellForge
                 r.Step("co-op marks");
             }
             catch (Exception e) when (e is HfError || e is IOException || e is UnauthorizedAccessException) { r.Refused.Add(e.Message); }
+            // the list as this deploy left it, read while the player is not waiting, for the next deploy
+            ModsCache.RefreshLater(home, install);
             notesAt = DateTime.MinValue;
             return new Dictionary<string, object>
             {
@@ -394,8 +396,9 @@ namespace Hd2Qd.HellForge
             var games = Games(officialData, install);
             res.Step("games compared");
             // HellForge's mods command reads every mod (1.45 s on 39 mods, 2026-11-12): read once
-            // here, and again only when this deploy placed or removed one
-            var list = Hf.ReadMods(install);
+            // here, and again only when this deploy placed or removed one; kept from the last
+            // deploy's background read while the mods folder is unchanged (ModsCache)
+            var list = ModsCache.Read(home, install);
             res.Step("HellForge's list read");
             var placedByHand = Placed.Load(home, install);                 // the plugin window's "add from the library", before this target
             var ours = new HashSet<string>(mine.Values.Select(e => e.PackId).Where(x => x != null), StringComparer.OrdinalIgnoreCase);

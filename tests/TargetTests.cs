@@ -71,11 +71,12 @@ namespace HellForge.Tests
                     Assert.All(((Dictionary<string, object>)Plugin.TargetStatus(host)["mods"]).Values, v => Assert.Equal("link", v));       // each row: there as hard links to the library's files
                     Assert.Empty(Directory.GetDirectories(f.Mods, ".hd2qd-*"));
 
-                    // the same list again: nothing placed again, and HellForge's slow list read once
+                    // the same list again: nothing placed again, and HellForge's slow list not read at
+                    // all: the last deploy read it afterwards (ModsCache), and nothing changed since
                     int reads = f.Calls.Count(c => c[0] == "mods");
                     r = Plugin.TargetDeploy(host);
                     Assert.Contains("0 deployed, 2 unchanged", (string)r["said"]);
-                    Assert.Equal(reads + 1, f.Calls.Count(c => c[0] == "mods"));
+                    Assert.Equal(reads, f.Calls.Count(c => c[0] == "mods"));
                     Assert.Equal(0, f.StateCalls);                                          // order and switches: the state file, no mod-order / mod-switch
 
                     // a switched off in HellForge.exe comes back on; b off in the manager goes out
@@ -85,7 +86,8 @@ namespace HellForge.Tests
                     reads = f.Calls.Count(c => c[0] == "mods");
                     r = Plugin.TargetDeploy(host);
                     Assert.Contains("1 removed", (string)r["said"]);
-                    Assert.Equal(reads + 1, f.Calls.Count(c => c[0] == "mods"));           // not read again after removing
+                    // read once before placing (HellForge.exe changed the folder), and once after, for the next deploy
+                    Assert.Equal(reads + 2, f.Calls.Count(c => c[0] == "mods"));
                     Assert.DoesNotContain(f.Calls, c => c[0] == "mod-remove" || c[0] == "mod-order" || c[0] == "mod-switch");
                     mods = Hf.ReadMods(f.Install).Mods;
                     Assert.DoesNotContain(mods, m => m.Id == packB);
@@ -107,6 +109,49 @@ namespace HellForge.Tests
                     Assert.True(Directory.Exists(own));
                 }
                 finally { Install.PlacesOverride = null; }
+            }
+        }
+
+        /// <summary>HellForge's list is kept while its mods folder is unchanged (ModsCache; the user,
+        /// 2026-11-15: the read is the largest fixed part of a deploy). Must live: kept when nothing
+        /// changed. Must die: any change there, at any depth, reads it again.</summary>
+        [Fact]
+        public void HellForgesListIsKeptOnlyWhileItsModsFolderIsUnchanged()
+        {
+            using (var f = new FakeHellForge())
+            {
+                var own = f.CodeFolder("someone.own", "Own Mod");
+                int Reads() => f.Calls.Count(c => c[0] == "mods");
+                Assert.Equal("gameplay", ModsCache.Read(f.Home, f.Install).Mods.Single(m => m.Id == "someone.own").Group);
+                Assert.Equal(1, Reads());
+                // nothing changed: kept
+                ModsCache.Read(f.Home, f.Install);
+                ModsCache.RefreshLater(f.Home, f.Install);
+                Assert.Equal(1, Reads());
+                // its manifest edited in its folder (HellForge.exe making it per-player): read again
+                File.WriteAllText(Path.Combine(own, "hellforge-mod.json"), "{\r\n  \"id\": \"someone.own\",\r\n  \"name\": \"Own Mod\",\r\n  \"coop\": \"per-player\"\r\n}\r\n");
+                Assert.Equal("per-player", ModsCache.Read(f.Home, f.Install).Mods.Single(m => m.Id == "someone.own").Group);
+                Assert.Equal(2, Reads());
+                // a file deeper down, same size, written later: read again
+                var deep = Path.Combine(own, "src", "main.c");
+                Directory.CreateDirectory(Path.GetDirectoryName(deep));
+                File.WriteAllText(deep, "int a;");
+                ModsCache.Read(f.Home, f.Install);
+                Assert.Equal(3, Reads());
+                File.WriteAllText(deep, "int b;");
+                File.SetLastWriteTimeUtc(deep, DateTime.UtcNow.AddSeconds(5));
+                ModsCache.Read(f.Home, f.Install);
+                Assert.Equal(4, Reads());
+                // a mod added beside it: read again, and in the list
+                f.CodeFolder("someone.other", "Other Mod");
+                Assert.Contains(ModsCache.Read(f.Home, f.Install).Mods, m => m.Id == "someone.other");
+                Assert.Equal(5, Reads());
+                // after a change, a refresh reads it once, and the next read takes that
+                Directory.Delete(Path.Combine(f.Mods, "Other Mod"), true);
+                ModsCache.RefreshLater(f.Home, f.Install);
+                Assert.Equal(6, Reads());
+                Assert.DoesNotContain(ModsCache.Read(f.Home, f.Install).Mods, m => m.Id == "someone.other");
+                Assert.Equal(6, Reads());
             }
         }
 

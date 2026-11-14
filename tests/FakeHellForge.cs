@@ -49,6 +49,7 @@ namespace HellForge.Tests
             Directory.CreateDirectory(Library);
             File.WriteAllText(Path.Combine(Install, "hellforge-install.json"), "{\"schemaVersion\": 1, \"buildId\": \"25480438\"}");
             Hf.Runner = Answer;
+            ModsCache.Inline = true;                       // the read after a deploy at once, on the test's thread
         }
 
         public void Dispose()
