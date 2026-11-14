@@ -310,6 +310,8 @@
   "pe_warbond_state": "已开放 {0}/{1} 页 · 已购买 {2}/{3} 件",
   "pe_warbond_not_owned": "此档案未拥有",
   "pe_page_n": "解锁到第 {0} 页",
+  "pe_pages_before": "解锁到第",
+  "pe_pages_after": "页",
   "pe_unlock": "解锁",
   "pe_items": "按类别管理物品",
   "pe_items_hint": "只添加物品，不会移除。已知名称的物品使用游戏中的官方名称，其余只计数量。",

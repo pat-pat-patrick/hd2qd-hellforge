@@ -317,6 +317,8 @@
   "pe_warbond_state": "Pages open {0}/{1} · items bought {2}/{3}",
   "pe_warbond_not_owned": "Not owned in this profile",
   "pe_page_n": "Up to page {0}",
+  "pe_pages_before": "Up to page",
+  "pe_pages_after": "",
   "pe_unlock": "Unlock",
   "pe_items": "Items by category",
   "pe_items_hint": "Adds items; nothing is taken away. Names come from the game's own text where they are known; the others are counted.",

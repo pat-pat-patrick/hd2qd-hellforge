@@ -288,6 +288,19 @@ namespace Hd2Qd.HellForge
                     var png = new System.Windows.Media.Imaging.PngBitmapEncoder();
                     png.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(bmp));
                     using (var s = File.Create(file)) png.Save(s);
+                    // beside it, each text's own colour, the dark ones (unreadable on the window's ground) first
+                    var inks = new List<string>();
+                    void Walk(DependencyObject d)
+                    {
+                        if (d is TextBlock tb && tb.IsVisible && !string.IsNullOrEmpty(tb.Text) && tb.Foreground is SolidColorBrush c)
+                        {
+                            double lum = (0.2126 * c.Color.R + 0.7152 * c.Color.G + 0.0722 * c.Color.B) / 255.0;
+                            inks.Add(lum.ToString("0.00", CultureInfo.InvariantCulture) + "\t" + c.Color + "\t" + tb.Text.Replace("\n", " "));
+                        }
+                        for (int i = 0; i < VisualTreeHelper.GetChildrenCount(d); i++) Walk(VisualTreeHelper.GetChild(d, i));
+                    }
+                    Walk(body);
+                    File.WriteAllLines(file + ".ink.txt", inks.OrderBy(x => x, StringComparer.Ordinal));
                 }));
             }
 

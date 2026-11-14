@@ -25,7 +25,9 @@ namespace Hd2Qd.HellForge
             string peError;
             bool peLoading;
             readonly HashSet<string> peBackedUp = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            readonly HashSet<int> peOpen = new HashSet<int>();
+            // HD2QD_HELLFORGE_OPEN=9,7 (pictures only): the categories shown open
+            readonly HashSet<int> peOpen = new HashSet<int>((Environment.GetEnvironmentVariable("HD2QD_HELLFORGE_OPEN") ?? "")
+                .Split(',').Select(s => int.TryParse(s, out var n) ? n : -1).Where(n => n >= 0));
 
             // categories of HellForge's item catalogue (progressionCategory) whose kind is known (research/item_names,
             // 2026-11-15: each from the items named in it); the others are shown by number with examples
@@ -37,7 +39,16 @@ namespace Hd2Qd.HellForge
             // amounts, not things owned: edited as currencies (15 samples, 18 currencies) or not at all (21 Super Credit packs)
             static readonly HashSet<int> NotListed = new HashSet<int> { 15, 18, 21 };
 
-            Hf.Profile CurrentProfile => profiles.FirstOrDefault(p => settings != null && p.Name == settings.Profile);
+            Hf.Profile CurrentProfile
+            {
+                get
+                {
+                    var p = profiles.FirstOrDefault(x => settings != null && x.Name == settings.Profile);
+                    // HD2QD_HELLFORGE_PROFILE (pictures only): another profile folder, a copy, so every state can be shown
+                    var other = Environment.GetEnvironmentVariable("HD2QD_HELLFORGE_PROFILE");
+                    return p != null && !string.IsNullOrEmpty(other) ? new Hf.Profile { Name = p.Name, Template = p.Template, Selected = true, Folder = other } : p;
+                }
+            }
 
             void RenderProfile()
             {
@@ -171,15 +182,22 @@ namespace Hd2Qd.HellForge
                 var wgrid = new WrapPanel { MaxWidth = 900, HorizontalAlignment = HorizontalAlignment.Left };
                 foreach (var w in pe.Weapons.OrderBy(w => ItemName(w.Weapon) ?? "￿" + w.Weapon.ToString("X8")))
                 {
-                    var cell = new DockPanel { Width = 290, Margin = new Thickness(0, 2, 8, 2) };
-                    var pick = new ComboBox { Width = 64, IsEnabled = can };
-                    for (int i = 0; i <= w.MaxLevel; i++) pick.Items.Add(i);
-                    int now = doc.WeaponLevel(w.Id);
-                    pick.SelectedItem = Math.Min(now, w.MaxLevel);
+                    // the window's own controls (the user, 2026-11-15: no plain WPF ones): a Range slider and its
+                    // value, set when the drag ends, as the Forge Credits slider is
+                    var cell = new DockPanel { Width = 420, Margin = new Thickness(0, 3, 16, 3) };
+                    int now = Math.Min(doc.WeaponLevel(w.Id), w.MaxLevel);
+                    var value = new TextBlock { Text = now.ToString(CultureInfo.InvariantCulture), Width = 28, TextAlignment = TextAlignment.Right, VerticalAlignment = VerticalAlignment.Center };
+                    var slider = new Slider { Minimum = 0, Maximum = w.MaxLevel, SmallChange = 1, LargeChange = 5, TickFrequency = 1, IsSnapToTickEnabled = true, Value = now,
+                                              Style = S("Range"), Width = 150, VerticalAlignment = VerticalAlignment.Center, IsEnabled = can, Margin = new Thickness(12, 0, 8, 0) };
+                    slider.ValueChanged += (s, e) => value.Text = ((int)slider.Value).ToString(CultureInfo.InvariantCulture);
                     var pkg = w;
-                    pick.SelectionChanged += (s, e) => { if (pick.SelectedItem is int v && v != now) Apply(profile, ed => ed.SetWeaponLevel(pkg, v)); };
-                    DockPanel.SetDock(pick, Dock.Right);
-                    cell.Children.Add(pick);
+                    void SetLevel() { int v = (int)slider.Value; if (v != now) { now = v; Apply(profile, ed => ed.SetWeaponLevel(pkg, v)); } }
+                    slider.AddHandler(System.Windows.Controls.Primitives.Thumb.DragCompletedEvent, new System.Windows.Controls.Primitives.DragCompletedEventHandler((s, e) => SetLevel()));
+                    slider.PreviewMouseLeftButtonUp += (s, e) => SetLevel();
+                    DockPanel.SetDock(value, Dock.Right);
+                    DockPanel.SetDock(slider, Dock.Right);
+                    cell.Children.Add(value);
+                    cell.Children.Add(slider);
                     cell.Children.Add(new TextBlock { Text = ItemName(w.Weapon) ?? T("pe_unnamed", w.Weapon.ToString("X8")), VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis });
                     wgrid.Children.Add(cell);
                 }
@@ -197,12 +215,20 @@ namespace Hd2Qd.HellForge
                     var right = new StackPanel { Orientation = Orientation.Horizontal };
                     if (owns && have < items)
                     {
-                        var pages = new ComboBox { Width = 120, IsEnabled = can };
-                        for (int i = 1; i <= w.Pages.Count; i++) pages.Items.Add(T("pe_page_n", i));
-                        pages.SelectedIndex = w.Pages.Count - 1;
-                        right.Children.Add(pages);
+                        // up to which page: the window's Segment choice, as a pack's variants are picked
+                        int upTo = w.Pages.Count;
+                        right.Children.Add(new TextBlock { Text = T("pe_pages_before"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 6, 0) });
+                        for (int i = 1; i <= w.Pages.Count; i++)
+                        {
+                            int page = i;
+                            var rb = new RadioButton { Content = page.ToString(CultureInfo.InvariantCulture), Style = S("Segment"), FontSize = 12, GroupName = "hfwb|" + w.Id,
+                                                       IsChecked = page == upTo, IsEnabled = can, ToolTip = T("pe_page_n", page), MinWidth = 32 };
+                            rb.Checked += (s, e) => upTo = page;
+                            right.Children.Add(rb);
+                        }
+                        right.Children.Add(new TextBlock { Text = T("pe_pages_after"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(6, 0, 4, 0) });
                         var wb = w;
-                        var go = Btn(T("pe_unlock"), false, () => Apply(profile, e => e.UnlockWarbond(pe, wb, pages.SelectedIndex + 1)));
+                        var go = Btn(T("pe_unlock"), false, () => Apply(profile, e => e.UnlockWarbond(pe, wb, upTo)));
                         go.IsEnabled = can;
                         right.Children.Add(go);
                     }
@@ -245,7 +271,7 @@ namespace Hd2Qd.HellForge
                     foreach (var it in list.Where(i => ItemName(i.MixId) != null).OrderBy(i => ItemName(i.MixId), StringComparer.CurrentCulture))
                     {
                         bool has = held.Contains(it.MixId);
-                        var cb = new CheckBox { Content = ItemName(it.MixId), IsChecked = has, IsEnabled = can && !has, Width = 280, Margin = new Thickness(0, 2, 8, 2), ToolTip = has ? T("pe_owned") : T("pe_add") };
+                        var cb = new CheckBox { Content = ItemName(it.MixId), Style = S("Tick"), IsChecked = has, IsEnabled = can && !has, Width = 280, Margin = new Thickness(0, 3, 8, 3), ToolTip = has ? T("pe_owned") : T("pe_add") };
                         var id = it.MixId;
                         cb.Click += (s, e) => Apply(profile, ed => ed.Grant(id));
                         names.Children.Add(cb);
