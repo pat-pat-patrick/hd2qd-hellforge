@@ -219,6 +219,11 @@ namespace Hd2Qd.HellForge
             (Json.Objs(root, "profiles").Select(p => new Profile { Name = Json.Str(p, "name"), Template = Json.Str(p, "template"), Selected = Json.Bool(p, "selected") }).ToList(),
              Json.Objs(root, "templates").Select(t => Json.Str(t, "name")).Where(n => n != null).ToList());
 
+        /// <summary>What each template starts a profile with, as `profiles` says it (templates[].description).</summary>
+        public static Dictionary<string, string> TemplateNotes(Dictionary<string, object> root) =>
+            Json.Objs(root, "templates").Where(t => Json.Str(t, "name") != null && !string.IsNullOrWhiteSpace(Json.Str(t, "description")))
+                .GroupBy(t => Json.Str(t, "name")).ToDictionary(g => g.Key, g => Json.Str(g.First(), "description").Trim());
+
         /// <summary>A profile's name as HellForge takes it: 1 to 32 lowercase letters, digits or hyphens.</summary>
         public static bool GoodProfileName(string name) =>
             !string.IsNullOrEmpty(name) && name.Length <= 32 && name.All(c => (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-');
@@ -227,6 +232,10 @@ namespace Hd2Qd.HellForge
         {
             public string Profile, War;
             public bool Multiplayer, Sandbox, Strangers, LiveChanges, SteamBridge;
+            /// <summary>Local PlayFab, the game's own log, a full crash dump, and the game's own
+            /// command-line options (settings --local-playfab, --engine-log, --crash-dump, --game-options).</summary>
+            public bool LocalPlayFab, EngineLog, CrashDump;
+            public string GameOptions = "";
             public bool? StrangersChosen;
             public long ForgeCredits = 30;
         }
@@ -235,11 +244,30 @@ namespace Hd2Qd.HellForge
         {
             Profile = Json.Str(root, "profile"), War = Json.Str(root, "war") ?? "live",
             Multiplayer = Json.Bool(root, "multiplayer"), Sandbox = Json.Bool(root, "sandbox"), SteamBridge = Json.Bool(root, "steamBridge"),
+            LocalPlayFab = Json.Bool(root, "localPlayFab"), EngineLog = Json.Bool(root, "engineLog"), CrashDump = Json.Bool(root, "crashDump"),
+            GameOptions = Json.Str(root, "gameOptions") ?? "",
             Strangers = Json.Bool(root, "playWithStrangers"), StrangersChosen = Json.MaybeBool(root, "playWithStrangersChosen"),
             LiveChanges = Json.Bool(root, "liveChanges"), ForgeCredits = Json.Long(root, "forgeCreditChance", 30),
         };
 
         // ---------------------------------------------------------------- sessions and logs
+
+        /// <summary>Whether the game is building its shader cache behind a black window: none at
+        /// the session's start and no request to the backend yet (external-launchers.md, the run's
+        /// result.json "shaderCache"; HellForge's own ShaderCache.Building, read 2026-11-15).</summary>
+        public static bool ShaderCacheBuilding(string run)
+        {
+            try
+            {
+                var p = Path.Combine(run, "result.json");
+                if (!File.Exists(p)) return false;
+                var d = Json.Obj(File.ReadAllText(p, Encoding.UTF8));
+                if (d == null || d.ContainsKey("firstBackendRequestSeconds")) return false;
+                var start = Json.Obj(Json.Obj(d, "shaderCache"), "atStart");
+                return start != null && start.TryGetValue("files", out var f) && f != null && Convert.ToInt64(f, System.Globalization.CultureInfo.InvariantCulture) == 0;
+            }
+            catch (Exception x) when (x is IOException || x is UnauthorizedAccessException || x is FormatException || x is InvalidCastException || x is ArgumentException) { return false; }
+        }
 
         public sealed class Session
         {

@@ -63,11 +63,16 @@ namespace Hd2Qd.HellForge
             Hf.Settings settings;
             List<Hf.Profile> profiles = new List<Hf.Profile>();
             List<string> templates = new List<string>();
+            /// <summary>What each template starts a profile with (`profiles` templates[].description).</summary>
+            Dictionary<string, string> templateNotes = new Dictionary<string, string>();
+            /// <summary>Mod sync's settings and the mods downloaded from hosts (SyncSettings).</summary>
+            SyncSettings.State sync;
             List<Hf.Session> runs = new List<Hf.Session>();
             List<Dictionary<string, object>> languages = new List<Dictionary<string, object>>();
             Dictionary<string, Placed.Entry> placed = new Dictionary<string, Placed.Entry>();
             string readError;
-            string tab = "mods";
+            // HD2QD_HELLFORGE_TAB (pictures only): the tab the window opens on
+            string tab = Environment.GetEnvironmentVariable("HD2QD_HELLFORGE_TAB") ?? "mods";
             bool busy, reading, adding, creatingProfile, syncedOnce, playWhenRead;
             HashSet<string> deployedPacks = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
@@ -182,6 +187,9 @@ namespace Hd2Qd.HellForge
                 settings = a.Settings != null ? Hf.ParseSettings(a.Settings) : null;
                 var pr = a.Profiles != null ? Hf.ParseProfiles(a.Profiles) : (new List<Hf.Profile>(), new List<string>());
                 profiles = pr.Item1; templates = pr.Item2;
+                templateNotes = a.Profiles != null ? Hf.TemplateNotes(a.Profiles) : new Dictionary<string, string>();
+                try { sync = SyncSettings.Read(install); }
+                catch (Exception e) when (e is IOException || e is UnauthorizedAccessException || e is FormatException || e is ArgumentException) { sync = null; }
                 runs = a.Logs != null ? Hf.ParseRuns(a.Logs) : new List<Hf.Session>();
                 languages = a.Languages != null ? Json.Objs(a.Languages, "languages") : new List<Dictionary<string, object>>();
                 try
@@ -254,9 +262,35 @@ namespace Hd2Qd.HellForge
                 }
                 finally { reading = false; }
                 Render();
+                Picture();
                 if (install != null) poll.Start();
                 if (playWhenRead) { playWhenRead = false; Play(); }
             }
+
+            /// <summary>HD2QD_HELLFORGE_SHOT=file.png (pictures only): the tab's whole page, drawn in
+            /// this process once the first read is shown, whatever the window's height.</summary>
+            void Picture()
+            {
+                var file = Environment.GetEnvironmentVariable("HD2QD_HELLFORGE_SHOT");
+                if (string.IsNullOrEmpty(file) || shotTaken) return;
+                shotTaken = true;
+                body.Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, new Action(() =>
+                {
+                    body.UpdateLayout();
+                    int w = (int)Math.Ceiling(body.ActualWidth), h = (int)Math.Ceiling(body.ActualHeight);
+                    if (w < 1 || h < 1) return;
+                    var bmp = new System.Windows.Media.Imaging.RenderTargetBitmap(w * 2, h * 2, 192, 192, PixelFormats.Pbgra32);
+                    var ground = new DrawingVisual();
+                    using (var dc = ground.RenderOpen()) dc.DrawRectangle(B("Ground900"), null, new Rect(0, 0, w, h));
+                    bmp.Render(ground);
+                    bmp.Render(body);
+                    var png = new System.Windows.Media.Imaging.PngBitmapEncoder();
+                    png.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(bmp));
+                    using (var s = File.Create(file)) png.Save(s);
+                }));
+            }
+
+            bool shotTaken;
 
             /// <summary>Every 3 s while the window is open: whether a session started or ended
             /// (HellForge.exe may start one too).</summary>
@@ -758,10 +792,46 @@ namespace Hd2Qd.HellForge
                 body.Children.Add(wrow);
 
                 Toggle(T("multiplayer"), T("multiplayer_hint"), settings.Multiplayer, on => Hf.Run(install, "settings", "--multiplayer", on ? "yes" : "no"));
+                Toggle(T("local_playfab"), T("local_playfab_hint"), settings.LocalPlayFab, on => Hf.Run(install, "settings", "--local-playfab", on ? "yes" : "no"));
                 Toggle(T("strangers"), T("strangers_hint"), settings.Strangers, on =>
                     Hf.Run(install, "settings", "--strangers", on ? "yes" : "no"), on => !on || Ask(T("strangers_ask"), T("strangers_on")));
-                Toggle(T("sandbox"), T("sandbox_hint"), settings.Sandbox, on => Hf.Run(install, "settings", "--sandbox", on ? "yes" : "no"));
+                // the switch shows what the next session does: the player's choice, else the sandbox's
+                // (on while sandboxed); "Use default" takes a choice back (settings --strangers default)
+                var sdef = Row();
+                sdef.Margin = new Thickness(60, 4, 0, 0);
+                sdef.Children.Add(Small(settings.Sandbox && settings.SteamBridge ? T("strangers_default_on")
+                    : T("strangers_default_off", settings.SteamBridge ? T("strangers_off_sandbox") : T("strangers_off_bridge")), new Thickness(0, 0, 12, 0)));
+                if (settings.StrangersChosen != null)
+                    sdef.Children.Add(Btn(T("strangers_use_default"), false, () => Change(() => Hf.Run(install, "settings", "--strangers", "default"))));
+                body.Children.Add(sdef);
+                var sandbox = Toggle(T("sandbox"), T("sandbox_hint"), settings.Sandbox, on => Hf.Run(install, "settings", "--sandbox", on ? "yes" : "no"));
+                if (!settings.SteamBridge)
+                {
+                    sandbox.IsEnabled = settings.Sandbox;        // turning it off stays possible
+                    var nb = Line(T("sandbox_no_bridge"), "Yellow");
+                    nb.Margin = new Thickness(60, 4, 0, 0);
+                    body.Children.Add(nb);
+                }
                 Toggle(T("live_changes"), T("live_changes_hint"), settings.LiveChanges, on => Hf.Run(install, "settings", "--live-changes", on ? "yes" : "no"));
+
+                RenderSync();
+
+                Section(T("launch_options"), T("launch_options_hint"));
+                var lrow = Row();
+                var opts = new TextBox { Style = S("Input"), Width = 420, Text = settings.GameOptions ?? "", VerticalAlignment = VerticalAlignment.Center, ToolTip = T("launch_options_example") };
+                lrow.Children.Add(opts);
+                var saveOpts = Btn(T("launch_options_save"), false, () =>
+                {
+                    var v = opts.Text.Trim();
+                    if (v != (settings.GameOptions ?? "").Trim()) Change(() => Hf.Run(install, "settings", "--game-options", v));
+                });
+                saveOpts.Margin = new Thickness(8, 0, 0, 0);
+                lrow.Children.Add(saveOpts);
+                body.Children.Add(lrow);
+
+                Section(T("troubleshooting"), null);
+                Toggle(T("engine_log"), T("engine_log_hint"), settings.EngineLog, on => Hf.Run(install, "settings", "--engine-log", on ? "yes" : "no"));
+                Toggle(T("crash_dump"), T("crash_dump_hint"), settings.CrashDump, on => Hf.Run(install, "settings", "--crash-dump", on ? "yes" : "no"));
 
                 Section(T("forge_credits"), T("forge_credits_hint"));
                 var fc = new DockPanel { Margin = new Thickness(0, 4, 0, 0), MaxWidth = 520, HorizontalAlignment = HorizontalAlignment.Left };
@@ -823,12 +893,18 @@ namespace Hd2Qd.HellForge
                 var name = new TextBox { Style = S("Input"), Width = 220, VerticalAlignment = VerticalAlignment.Center, ToolTip = T("profile_name_rule") };
                 row.Children.Add(name);
                 string template = templates.FirstOrDefault(t => t == "starter") ?? templates.FirstOrDefault();
+                // what the template picked starts the profile with, as HellForge says it
+                var note = Small("", new Thickness(0, 6, 0, 0));
+                note.MaxWidth = 760;
+                note.HorizontalAlignment = HorizontalAlignment.Left;
+                void Note() { note.Text = template != null && templateNotes.TryGetValue(template, out var n) ? n : ""; note.Visibility = note.Text.Length > 0 ? Visibility.Visible : Visibility.Collapsed; }
                 foreach (var t in templates)
                 {
                     var rb = new RadioButton { Content = T("template_" + t) == "template_" + t ? t : T("template_" + t), Style = S("Segment"), GroupName = "hftemplate", IsChecked = t == template, Margin = new Thickness(8, 0, 0, 0) };
-                    rb.Checked += (s, e) => template = t;
+                    rb.Checked += (s, e) => { template = t; Note(); };
                     row.Children.Add(rb);
                 }
+                Note();
                 var go = Btn(T("profile_create"), true, () =>
                 {
                     var n = name.Text.Trim();
@@ -838,10 +914,67 @@ namespace Hd2Qd.HellForge
                 });
                 go.Margin = new Thickness(12, 0, 0, 0);
                 row.Children.Add(go);
-                return row;
+                var both = new StackPanel();
+                both.Children.Add(row);
+                both.Children.Add(note);
+                return both;
             }
 
-            void Toggle(string label, string hint, bool on, Func<bool, Hf.Result> set, Func<bool, bool> confirm = null)
+            /// <summary>Mod sync (HellForge's MOD SYNC card, without the trusted mods, which only its
+            /// own launcher can take back): when I host, when I join, the blocklist, and the mods
+            /// downloaded from hosts. Written into mods\hellforge-mods.json (SyncSettings); a session
+            /// picks the switches up as HellForge's launcher's do.</summary>
+            void RenderSync()
+            {
+                if (sync == null) return;
+                Section(T("sync"), T("sync_hint"));
+                body.Children.Add(Small(T("sync_host"), new Thickness(0, 8, 0, 0)));
+                Toggle(T("sync_share"), T("sync_share_hint"), sync.Share, on => Local(() => SyncSettings.Set(install, "share", on)));
+                Toggle(T("sync_list_public"), T("sync_list_public_hint"), sync.ListPublic, on => Local(() => SyncSettings.Set(install, "listPublic", on)));
+                body.Children.Add(Small(T("sync_join"), new Thickness(0, 16, 0, 0)));
+                Toggle(T("sync_edited_stats"), T("sync_edited_stats_hint"), sync.ShowEditedStats, on => Local(() => SyncSettings.Set(install, "showEditedStats", on)));
+
+                body.Children.Add(new TextBlock { Text = T("sync_blocked"), FontSize = 14, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 18, 0, 0) });
+                body.Children.Add(Small(sync.Blocked.Count == 0 ? T("sync_blocked_none") : T("sync_blocked_hint"), new Thickness(0, 2, 0, 0)));
+                foreach (var id in sync.Blocked)
+                {
+                    var row = new DockPanel { Margin = new Thickness(0, 6, 0, 0), MaxWidth = 860, HorizontalAlignment = HorizontalAlignment.Left };
+                    var unblock = Btn(T("sync_unblock"), false, () => Change(() => Local(() => SyncSettings.Unblock(install, id))));
+                    DockPanel.SetDock(unblock, Dock.Right);
+                    row.Children.Add(unblock);
+                    row.Children.Add(new TextBlock { Text = id, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 16, 0) });
+                    body.Children.Add(row);
+                }
+
+                if (sync.Downloaded > 0)
+                {
+                    body.Children.Add(new TextBlock { Text = T("sync_downloaded"), FontSize = 14, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 18, 0, 0) });
+                    var row = new DockPanel { Margin = new Thickness(0, 4, 0, 0), MaxWidth = 860, HorizontalAlignment = HorizontalAlignment.Left };
+                    var clear = Btn(T("sync_delete_downloads"), false, () =>
+                    {
+                        if (Ask(T("sync_delete_ask", sync.Downloaded), T("sync_delete_downloads"))) Change(() => Local(() => SyncSettings.DeleteDownloads(install)));
+                    });
+                    clear.IsEnabled = !Locked;
+                    if (Locked) clear.ToolTip = T("sync_delete_locked");
+                    DockPanel.SetDock(clear, Dock.Right);
+                    row.Children.Add(clear);
+                    row.Children.Add(new TextBlock
+                    {
+                        Text = T("sync_downloaded_line", sync.Downloaded, (sync.DownloadedBytes / 1048576.0).ToString("0.0", CultureInfo.InvariantCulture)),
+                        TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 16, 0),
+                    });
+                    body.Children.Add(row);
+                }
+            }
+
+            /// <summary>A change made here, not through HellForge.Cli, as a result for Change.</summary>
+            static Hf.Result Local(Action act)
+            {
+                act();
+                return new Hf.Result();
+            }
+
+            CheckBox Toggle(string label, string hint, bool on, Func<bool, Hf.Result> set, Func<bool, bool> confirm = null)
             {
                 var row = new DockPanel { Margin = new Thickness(0, 16, 0, 0), MaxWidth = 860, HorizontalAlignment = HorizontalAlignment.Left };
                 var sw = new CheckBox { Style = S("Switch"), IsChecked = on, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 2, 16, 0) };
@@ -858,6 +991,7 @@ namespace Hd2Qd.HellForge
                 text.Children.Add(Small(hint, new Thickness(0, 2, 0, 0)));
                 row.Children.Add(text);
                 body.Children.Add(row);
+                return sw;
             }
 
             void Section(string title, string hint)
@@ -1157,8 +1291,12 @@ namespace Hd2Qd.HellForge
                 if (result != null && result.Ok)
                 {
                     Foot(T("exported", file));
-                    if (crash) Tell(T("crash_report_done", file, Json.Str(Json.Obj(result.Out), "issuePage") ?? "https://github.com/SkyeShade/HellForge/issues/new"));
                     OpenFile(Path.GetDirectoryName(file));
+                    // the issue page HellForge names (logs --crash-report issuePage), opened on a click
+                    var page = Json.Str(Json.Obj(result.Out), "issuePage") ?? "https://github.com/SkyeShade/HellForge/issues/new";
+                    if (crash && Ask(T("crash_report_done", file, page), T("crash_issue_open")) && WebLink(page) != null)
+                        try { Process.Start(new ProcessStartInfo(page) { UseShellExecute = true }); }
+                        catch (Exception e) when (e is System.ComponentModel.Win32Exception || e is InvalidOperationException) { Tell(e.Message); }
                 }
             }
 
@@ -1231,6 +1369,16 @@ namespace Hd2Qd.HellForge
 
             void BuildTick(object sender, EventArgs e)
             {
+                if (playStatus == "observing" && playRun != null)
+                {
+                    // the first start builds the game's shader cache behind a black window: said, as
+                    // HellForge's launcher says it (its ShaderCache.Building on result.json)
+                    var shaders = Hf.ShaderCacheBuilding(playRun);
+                    var running = StatusText("observing");
+                    var want = shaders ? T("status_shader_cache") : (playLine == T("status_shader_cache") ? running : playLine);
+                    if (want != playLine) { playLine = want; RenderHead(); }
+                    return;
+                }
                 if (playStatus != "preparing" || playRun == null) return;
                 Dictionary<string, object> b;
                 try
