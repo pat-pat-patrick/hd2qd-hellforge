@@ -22,6 +22,7 @@ namespace Hd2Qd.HellForge
             Dictionary<uint, string> peNames;
             Dictionary<uint, string> peWarbondNames;
             ProfileData.GameText peText;
+            Dictionary<uint, (string Slot, string Class)> peClasses;
             string peError;
             bool peLoading;
             readonly HashSet<string> peBackedUp = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -86,12 +87,13 @@ namespace Hd2Qd.HellForge
                         else if (w.Items.Select(i => names.TryGetValue(i.MixId, out var n) ? n : null).FirstOrDefault(n => n != null) is string item)
                             wn[w.Id] = T("pe_warbond_with", item);
                     }
-                    return (cat, prog, text, names, wn);
+                    var classes = ProfileData.WeaponClasses(h, inst);
+                    return (cat, prog, text, names, wn, classes);
                 }).ContinueWith(t =>
                 {
                     peLoading = false;
                     if (t.IsFaulted) peError = t.Exception.InnerException?.Message ?? t.Exception.Message;
-                    else (peCatalogue, pe, peText, peNames, peWarbondNames) = t.Result;
+                    else (peCatalogue, pe, peText, peNames, peWarbondNames, peClasses) = t.Result;
                     if (tab == "profile") { Render(); Picture(); }
                 }, TaskScheduler.FromCurrentSynchronizationContext());
             }
@@ -179,8 +181,15 @@ namespace Hd2Qd.HellForge
                 wmax.IsEnabled = can && pe.Weapons.Any(w => doc.WeaponLevel(w.Id) < w.MaxLevel);
                 wall.Children.Add(wmax);
                 body.Children.Add(wall);
+                // by the armory's own categories, in its order (the user, 2026-11-15), each under the game's word for it
+                (string Slot, string Class) ClassOf(ProfileData.Package w) => peClasses != null && peClasses.TryGetValue(w.Weapon, out var c) ? c : (null, null);
+                foreach (var group in pe.Weapons.GroupBy(ClassOf).OrderBy(g => ArmoryRank(g.Key.Slot, g.Key.Class)))
+                {
+                var heading = group.Key.Class == null ? T("pe_class_other")
+                    : (peText?.Common(group.Key.Class) ?? group.Key.Class) + (group.Key.Slot == "secondary" ? T("pe_class_secondary") : "");
+                body.Children.Add(new TextBlock { Text = heading, FontSize = 13, Foreground = B("Muted"), Margin = new Thickness(0, 10, 0, 2) });
                 var wgrid = new WrapPanel { MaxWidth = 900, HorizontalAlignment = HorizontalAlignment.Left };
-                foreach (var w in pe.Weapons.OrderBy(w => ItemName(w.Weapon) ?? "￿" + w.Weapon.ToString("X8")))
+                foreach (var w in group.OrderBy(w => ItemName(w.Weapon) ?? "￿" + w.Weapon.ToString("X8")))
                 {
                     // the window's own controls (the user, 2026-11-15: no plain WPF ones): a Range slider and its
                     // value, set when the drag ends, as the Forge Credits slider is
@@ -202,6 +211,7 @@ namespace Hd2Qd.HellForge
                     wgrid.Children.Add(cell);
                 }
                 body.Children.Add(wgrid);
+                }
 
                 // warbonds: the ones the profile owns, up to a page
                 Sub(Word("WARBONDS", "pe_warbonds"));
@@ -298,6 +308,18 @@ namespace Hd2Qd.HellForge
                     row.Children.Add(new TextBlock { Text = b.SavedUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture) + "  ·  " + b.Reason, VerticalAlignment = VerticalAlignment.Center });
                     body.Children.Add(row);
                 }
+            }
+
+            // the armory's order of its weapon groups (HellForge's EditorCatalog.GroupOrder, the game's tabs)
+            static readonly string[] PrimaryOrder = { "Assault Rifle", "Marksman Rifle", "Submachine Gun", "Shotgun", "Explosive", "Energy-Based", "Special" };
+            static readonly string[] SecondaryOrder = { "Pistol", "Melee", "Special" };
+
+            static int ArmoryRank(string slot, string cls)
+            {
+                if (cls == null) return 1000;
+                if (slot == "primary") { int i = Array.IndexOf(PrimaryOrder, cls); return i >= 0 ? i : 50; }
+                if (slot == "secondary") { int i = Array.IndexOf(SecondaryOrder, cls); return 100 + (i >= 0 ? i : 50); }
+                return 500;
             }
 
             /// <summary>A part of the editor under its own small heading.</summary>

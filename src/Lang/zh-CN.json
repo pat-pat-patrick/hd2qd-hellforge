@@ -302,6 +302,8 @@
   "pe_weapons": "武器等级",
   "pe_weapons_hint": "每一级都会给予对应的奖励与配件，与游戏中相同。降低等级不会收回已获得的物品。",
   "pe_weapons_all_max": "全部设为最高等级",
+  "pe_class_other": "其他武器",
+  "pe_class_secondary": "（副武器）",
   "pe_unnamed": "未命名 {0}",
   "pe_warbonds": "战争债券",
   "pe_warbonds_hint": "解锁到某一页会购买该页及之前各页的物品，不消耗奖章。付费战争债券只能在已拥有它的档案中编辑：HellForge 只向在正式服拥有它的玩家提供其物品。",

@@ -170,6 +170,42 @@ namespace HellForge.Tests
             Assert.Null(ProfileData.ReadCatalogue(Encoding.UTF8.GetBytes("MZ nothing here")));   // must die: none
         }
 
+        /// <summary>Weapon levels by the armory's categories (the user, 2026-11-15): each item id's name from
+        /// the SDK header, its slot and class from the stats schema inside HellForge.Core.dll.</summary>
+        [Fact]
+        public void EachWeaponHasTheArmorysCategory()
+        {
+            var install = Path.Combine(Folder, "HellForge");
+            Directory.CreateDirectory(Path.Combine(install, "app", "sdk"));
+            Directory.CreateDirectory(Path.Combine(install, "app", "cli"));
+            File.WriteAllText(Path.Combine(install, "app", "sdk", "hellforge_content.h"),
+                "#define HF_ITEM_AR23_LIBERATOR 0xAA035309u               /* AR-23 Liberator */\n" +
+                "#define HF_ITEM_R36_ERUPTOR 0x11112222u   /* R-36 Eruptor - armory type 1 */\n" +
+                "#define HF_ITEM_UNKNOWN 0x33334444u   /* Something Unlisted */\n");
+            var schema = "{\"build\":\"25480438\",\"targets\":{\"stratagems\":{},\"weapons\":{" +
+                         "\"AR-23 Liberator\":{\"slot\":\"primary\",\"class\":\"Assault Rifle\",\"fields\":{\"note\":\"a } in a string\"}}," +
+                         "\"R-36 Eruptor\":{\"slot\":\"primary\",\"class\":\"Explosive\"},\"40-K Meltagun\":{\"slot\":\"support\"}}}}";
+            File.WriteAllBytes(Path.Combine(install, "app", "cli", "HellForge.Core.dll"), Encoding.UTF8.GetBytes("MZ\0\0\"targets\":{ broken\0" + schema + "\0tail"));
+            var classes = ProfileData.WeaponClasses(Folder, install);
+            Assert.Equal(("primary", "Assault Rifle"), classes[Weapon]);
+            Assert.Equal(("primary", "Explosive"), classes[0x11112222]);
+            Assert.False(classes.ContainsKey(0x33334444));                     // no class for a name the schema lacks
+            Assert.True(File.Exists(Path.Combine(Folder, "hellforge", "weapon-classes.json")));
+            Assert.Equal(classes, ProfileData.WeaponClasses(Folder, install));  // kept
+            // must die: no schema, no classes
+            Assert.Null(ProfileData.SchemaTargets(Encoding.UTF8.GetBytes("MZ nothing")));
+        }
+
+        [Fact]
+        public void AWordTheGameSaysSeveralWaysTakesItsMostCommonText()
+        {
+            var t = new ProfileData.GameText();
+            t.AnyCase["EXPLOSIVE"] = new List<uint> { 1, 2, 3 };
+            t.Local[1] = "炸弹"; t.Local[2] = "爆炸品"; t.Local[3] = "炸弹";
+            Assert.Equal("炸弹", t.Common("Explosive"));
+            Assert.Null(t.Common("Not In The Game"));
+        }
+
         [Fact]
         public void AnEnglishNameBecomesTheGamesOwnText()
         {

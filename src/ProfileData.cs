@@ -227,6 +227,18 @@ namespace Hd2Qd.HellForge
         {
             public Dictionary<string, uint> English = new Dictionary<string, uint>(StringComparer.Ordinal);
             public Dictionary<uint, string> Local = new Dictionary<uint, string>();
+            /// <summary>Every string id of each English text, whatever its case ("EXPLOSIVE", "Explosive").</summary>
+            public Dictionary<string, List<uint>> AnyCase = new Dictionary<string, List<uint>>(StringComparer.OrdinalIgnoreCase);
+
+            /// <summary>A word the game says in several places (a menu label, upper case in the armory): the
+            /// translation most of its lines have ("EXPLOSIVE": 炸弹 twice, 爆炸品 once; the wiki's armory says
+            /// 炸弹, 2026-11-15); null when the game has none.</summary>
+            public string Common(string english)
+            {
+                if (string.IsNullOrEmpty(english) || !AnyCase.TryGetValue(english.Trim(), out var ids)) return null;
+                return ids.Select(i => Local.TryGetValue(i, out var t) ? t : null).Where(t => !string.IsNullOrEmpty(t))
+                          .GroupBy(t => t).OrderByDescending(g => g.Count()).ThenBy(g => g.Key, StringComparer.Ordinal).Select(g => g.Key).FirstOrDefault();
+            }
 
             /// <summary>The official text in the window's language for an English name: the whole name, or
             /// the part after a model code ("AR-23 Liberator" -> "AR-23 " + the game's "Liberator"); null when
@@ -275,10 +287,92 @@ namespace Hd2Qd.HellForge
                 {
                     var s = Encoding.UTF8.GetString(t).Trim();
                     if (s.Length > 0 && !text.English.ContainsKey(s)) text.English[s] = id;
+                    if (s.Length > 0)
+                    {
+                        if (!text.AnyCase.TryGetValue(s, out var all)) text.AnyCase[s] = all = new List<uint>();
+                        all.Add(id);
+                    }
                 }
             if (byLang.TryGetValue(local, out var lo))
                 foreach (var (id, t) in lo) text.Local[id] = Encoding.UTF8.GetString(t).Trim();
             return text;
+        }
+
+        /// <summary>Each weapon's armory slot and class ("primary", "Assault Rifle"; the armory's own groups,
+        /// the user, 2026-11-15: weapon levels by the official weapon categories), by item id. Read from the
+        /// installed HellForge: the item ids' names from its mod SDK's app\sdk\hellforge_content.h
+        /// ("#define HF_ITEM_... 0x...u /* name */", MIT-0), each name's slot and class from the stats
+        /// schema HellForge.Core.dll holds as JSON text (targets.weapons: {name: {slot, class}}); kept in
+        /// home\hellforge\weapon-classes.json while both files are unchanged.</summary>
+        public static Dictionary<uint, (string Slot, string Class)> WeaponClasses(string home, string install)
+        {
+            var header = new FileInfo(Path.Combine(install, "app", "sdk", "hellforge_content.h"));
+            var core = new FileInfo(Path.Combine(install, "app", "cli", "HellForge.Core.dll"));
+            var result = new Dictionary<uint, (string, string)>();
+            if (!header.Exists || !core.Exists) return result;
+            var stamp = header.Length + ":" + header.LastWriteTimeUtc.Ticks + "|" + core.Length + ":" + core.LastWriteTimeUtc.Ticks;
+            var cache = Path.Combine(home, "hellforge", "weapon-classes.json");
+            try
+            {
+                var kept = File.Exists(cache) ? Json.Obj(File.ReadAllText(cache, Encoding.UTF8)) : null;
+                if (Json.Str(kept, "stamp") == stamp)
+                {
+                    foreach (var kv in Json.Obj(kept, "weapons") ?? new Dictionary<string, object>())
+                        if (uint.TryParse(kv.Key, NumberStyles.Integer, CultureInfo.InvariantCulture, out var id) && kv.Value is Dictionary<string, object> w)
+                            result[id] = (Json.Str(w, "slot"), Json.Str(w, "class"));
+                    return result;
+                }
+            }
+            catch (IOException) { }
+            var names = new Dictionary<uint, string>();
+            foreach (System.Text.RegularExpressions.Match m in System.Text.RegularExpressions.Regex.Matches(File.ReadAllText(header.FullName, Encoding.UTF8),
+                         @"#define HF_ITEM_\w+\s+0x([0-9A-Fa-f]+)u\s+/\*\s*(.+?)(?:\s+-\s+armory type \d+)?\s*\*/"))
+                names[uint.Parse(m.Groups[1].Value, NumberStyles.HexNumber, CultureInfo.InvariantCulture)] = m.Groups[2].Value.Trim();
+            var weapons = Json.Obj(SchemaTargets(File.ReadAllBytes(core.FullName)), "weapons") ?? new Dictionary<string, object>();
+            foreach (var kv in names)
+                if (Json.Obj(weapons, kv.Value) is Dictionary<string, object> w && Json.Str(w, "class") is string cls)
+                    result[kv.Key] = (Json.Str(w, "slot"), cls);
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(cache));
+                File.WriteAllText(cache, Json.Write(new Dictionary<string, object>
+                {
+                    ["stamp"] = stamp,
+                    ["weapons"] = result.ToDictionary(kv => kv.Key.ToString(CultureInfo.InvariantCulture), kv => (object)new Dictionary<string, object> { ["slot"] = kv.Value.Item1, ["class"] = kv.Value.Item2 }),
+                }), new UTF8Encoding(false));
+            }
+            catch (Exception e) when (e is IOException || e is UnauthorizedAccessException) { }
+            return result;
+        }
+
+        /// <summary>The stats schema's "targets" object in HellForge.Core.dll's bytes: the JSON text around
+        /// "targets":{ ... "weapons", parsed from where the text starts; null when absent.</summary>
+        internal static Dictionary<string, object> SchemaTargets(byte[] dll)
+        {
+            var key = Encoding.ASCII.GetBytes("\"targets\":{");
+            for (int at = IndexOf(dll, key, 0); at >= 0; at = IndexOf(dll, key, at + 1))
+            {
+                // the text runs back to the first byte that is no text
+                int start = at;
+                while (start > 0 && (dll[start - 1] >= 0x20 || dll[start - 1] == 9 || dll[start - 1] == 10 || dll[start - 1] == 13)) start--;
+                int open = Array.IndexOf(dll, (byte)'{', start);
+                if (open < 0 || open > at) continue;
+                int depth = 0, end = -1;
+                bool inString = false;
+                for (int i = open; i < dll.Length; i++)
+                {
+                    byte c = dll[i];
+                    if (inString) { if (c == '\\') i++; else if (c == '"') inString = false; continue; }
+                    if (c == '"') inString = true;
+                    else if (c == '{') depth++;
+                    else if (c == '}' && --depth == 0) { end = i; break; }
+                    else if (c < 0x20 && c != 9 && c != 10 && c != 13) break;
+                }
+                if (end < 0) continue;
+                var targets = Json.Obj(Json.Obj(Encoding.UTF8.GetString(dll, open, end - open + 1)), "targets");
+                if (Json.Obj(targets, "weapons") != null) return targets;
+            }
+            return null;
         }
 
         /// <summary>The newest session's arsenal.tsv: weapon item id -> "model name" in the game's language.</summary>

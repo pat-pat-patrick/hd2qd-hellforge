@@ -309,6 +309,8 @@
   "pe_weapons": "Weapon levels",
   "pe_weapons_hint": "Each level gives its rewards and attachments, as in the game. Lowering a level takes nothing away.",
   "pe_weapons_all_max": "Set every weapon to its highest level",
+  "pe_class_other": "Other weapons",
+  "pe_class_secondary": " (secondary)",
   "pe_unnamed": "Unnamed {0}",
   "pe_warbonds": "Warbonds",
   "pe_warbonds_hint": "Unlocking a page buys its items and the pages before it without spending medals. A premium warbond can be edited only in a profile that owns it: HellForge serves its items only to players who own it on the live game.",
