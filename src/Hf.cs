@@ -211,12 +211,12 @@ namespace Hd2Qd.HellForge
 
         public sealed class Profile
         {
-            public string Name, Template;
+            public string Name, Template, Folder;
             public bool Selected;
         }
 
         public static (List<Profile> Profiles, List<string> Templates) ParseProfiles(Dictionary<string, object> root) =>
-            (Json.Objs(root, "profiles").Select(p => new Profile { Name = Json.Str(p, "name"), Template = Json.Str(p, "template"), Selected = Json.Bool(p, "selected") }).ToList(),
+            (Json.Objs(root, "profiles").Select(p => new Profile { Name = Json.Str(p, "name"), Template = Json.Str(p, "template"), Folder = Json.Str(p, "folder"), Selected = Json.Bool(p, "selected") }).ToList(),
              Json.Objs(root, "templates").Select(t => Json.Str(t, "name")).Where(n => n != null).ToList());
 
         /// <summary>What each template starts a profile with, as `profiles` says it (templates[].description).</summary>

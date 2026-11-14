@@ -46,7 +46,7 @@ namespace Hd2Qd.HellForge
             v.Read();
         }
 
-        sealed class View
+        sealed partial class View
         {
             readonly Dictionary<string, object> host;
             readonly string lang, home;
@@ -273,6 +273,7 @@ namespace Hd2Qd.HellForge
             {
                 var file = Environment.GetEnvironmentVariable("HD2QD_HELLFORGE_SHOT");
                 if (string.IsNullOrEmpty(file) || shotTaken) return;
+                if (tab == "profile" && pe == null && peError == null) return;      // once the editor has its data
                 shotTaken = true;
                 body.Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, new Action(() =>
                 {
@@ -321,6 +322,7 @@ namespace Hd2Qd.HellForge
                 switch (tab)
                 {
                     case "settings": RenderSettings(); break;
+                    case "profile": RenderProfile(); break;
                     case "logs": RenderLogs(); break;
                     case "lobbies": RenderLobbies(); break;
                     default: RenderMods(); break;
@@ -374,7 +376,9 @@ namespace Hd2Qd.HellForge
             {
                 tabs.Children.Clear();
                 if (install == null || status == null || !status.GameCopy) return;
-                foreach (var (key, text) in new[] { ("mods", T("tab_mods")), ("lobbies", T("tab_lobbies")), ("settings", T("tab_settings")), ("logs", T("tab_logs")) })
+                // the profile on a tab of its own, HellForge's settings on another (the user, 2026-11-15:
+                // "档案…专门放在档案里；另一个“设置”就专门放 HellForge 设置")
+                foreach (var (key, text) in new[] { ("mods", T("tab_mods")), ("lobbies", T("tab_lobbies")), ("profile", T("tab_profile")), ("settings", T("tab_settings")), ("logs", T("tab_logs")) })
                 {
                     var rb = new RadioButton { Content = text, Style = S("Segment"), IsChecked = tab == key, GroupName = "hftab" };
                     rb.Checked += (s, e) => { if (tab != key) { tab = key; Render(); if (key == "lobbies" && RunNow != null) RefreshLobbies(); } };
@@ -764,9 +768,9 @@ namespace Hd2Qd.HellForge
 
             // ---------------------------------------------------------------- profile and settings
 
-            void RenderSettings()
+            /// <summary>The profile in use and new profiles (the top of the profile tab).</summary>
+            void RenderProfilePicker()
             {
-                if (settings == null) return;
                 Section(T("profile"), T("profile_hint"));
                 var prow = new WrapPanel();
                 foreach (var p in profiles)
@@ -780,7 +784,21 @@ namespace Hd2Qd.HellForge
                 prow.Children.Add(create);
                 body.Children.Add(prow);
                 if (creatingProfile) body.Children.Add(NewProfile());
+            }
 
+            /// <summary>Account sync (it fills the profile from the live game, so it is the profile's).</summary>
+            void RenderAccount()
+            {
+                Section(T("account"), T("account_hint"));
+                if (Proxy.On()) body.Children.Add(Line(T("proxy_on"), "Yellow"));
+                var arow = Row();
+                arow.Children.Add(Btn(T("account_sync"), false, SyncAccount));
+                body.Children.Add(arow);
+            }
+
+            void RenderSettings()
+            {
+                if (settings == null) return;
                 Section(T("war"), T("war_hint"));
                 var wrow = new WrapPanel();
                 foreach (var (key, text) in new[] { ("frozen", T("war_frozen")), ("live", T("war_live")), ("open", T("war_open")) })
@@ -844,12 +862,6 @@ namespace Hd2Qd.HellForge
                 slider.PreviewMouseLeftButtonUp += (s, e) => SetCredits((int)slider.Value);
                 fc.Children.Add(slider);
                 body.Children.Add(fc);
-
-                Section(T("account"), T("account_hint"));
-                if (Proxy.On()) body.Children.Add(Line(T("proxy_on"), "Yellow"));
-                var arow = Row();
-                arow.Children.Add(Btn(T("account_sync"), false, SyncAccount));
-                body.Children.Add(arow);
 
                 var packs = languages.Where(l => !Json.Bool(l, "inCopy")).ToList();
                 var inCopy = languages.Where(l => Json.Bool(l, "inCopy")).Select(l => Json.Str(l, "name")).ToList();

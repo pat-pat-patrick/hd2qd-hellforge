@@ -14,7 +14,8 @@ A plugin for [HD2 Mod Quick Deploy](https://github.com/pat-pat-patrick/hd2-mod-c
 | Mods made for the official game | Each resource a library mod replaces is compared between the official game and HellForge's older version. Resources that are identical in both, or that belong to the mod, are used unchanged. Text tables: the mod's changed lines are merged into HellForge's table. Render configuration, shader libraries and replaced game Lua scripts are not deployed. Other differing resources are deployed unchanged and listed |
 | This player only | Marks a code mod `"coop": "per-player"` in HellForge's copy, and marks it again when an update arrives without the mark. "Set all gameplay mods to this player only" marks every shared gameplay code mod except HellForge's own, including mods added later; while it is on, each mod's own switch follows it and is locked. Cosmetic mods have no switch: HellForge never compares them |
 | Warnings | A note on a library mod that replaces the render configuration or game text tables made for the official game, or that calls Boot Mod Loader's own API |
-| Profile and settings | Profile (including new profiles, with what each template starts with), galactic war, co-op, local PlayFab, play with strangers (or HellForge's default), sandbox, the game's launch options, engine log, full crash dump, Forge Credits share, language packs |
+| Profile | The profile in use, new profiles (with what each template starts with), account sync, and editing the profile between sessions: level, currencies (medals, requisition, samples, Forge Credits) within their caps, weapon levels, the pages of the warbonds the profile owns, and items by category (unlock a whole category, or add a named item). It changes the profile as HellForge itself does (its launcher's weapon levels, its backend's warbond purchases), adds and never removes, and backs the profile up first into its `backups` folder, where HellForge's Account sync page can restore it |
+| Settings | Galactic war, co-op, local PlayFab, play with strangers (or HellForge's default), sandbox, changing mods without restarting, the game's launch options, engine log, full crash dump, Forge Credits share, language packs |
 | Mod sync | Sharing your gameplay mods with players who join, listing your public lobbies on the Galactic Map, showing lobbies with host-enforced stat changes, the blocked mods (unblock), and the mods downloaded from hosts (count, size, delete) |
 | Logs | Each session's logs, export and crash report (nothing is uploaded) |
 | Title-bar icon | HellForge's own icon, read from the player's `HellForge.exe` at run time; the plugin does not include it. An anvil is shown when HellForge is not found |
@@ -31,7 +32,9 @@ changes while a session is running.
 
 - The first setup and repairs: copying the game, Steam's ownership check, the network block.
 - Trusted mods of mod sync (Untrust).
-- Account sync (Sync Inventory). The plugin opens HellForge for it, and warns when the Windows
+- Account sync (Sync Inventory).
+- Premium warbonds a profile does not own: HellForge serves a paid item only to a player who owns it on
+  the live game, whatever the profile holds, and the editor does not try to change that. The plugin opens HellForge for it, and warns when the Windows
   system proxy is enabled, which causes the sync to fail.
 
 ## Build
@@ -43,4 +46,9 @@ Plugins page.
 ## License
 
 MIT. HellForge is by SkyeShade (GPL-3.0); this plugin only runs its command line and reads its
-icon from the installed program.
+icon, its item catalogue (from `app\backend\HellForge.LocalBackend.exe`) and `app\progression-data.json`
+from the installed program, at run time.
+
+Item names: the game's own text, read from HellForge's game copy at run time, looked up by the English
+names of [helldivers-2/json](https://github.com/helldivers-2/json) (`src\Data\community-names.json`:
+item names and each warbond's items; MIT License, Copyright (c) 2024 Helldivers 2 Community).
