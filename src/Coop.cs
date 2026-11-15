@@ -282,6 +282,16 @@ namespace Hd2Qd.HellForge
             return (marked, refusedNow);
         }
 
+        /// <summary>HellForge's copy of a marked mod given its author's coop value back, the choice
+        /// kept: before the copy goes into the library (Collect), which then holds the author's text,
+        /// and the deploy that places it again marks it again (Reapply).</summary>
+        public static void Unmark(string home, string install, Hf.Mod m)
+        {
+            if (!Choices(home).TryGetValue(m.Id, out var original)) return;
+            if (!IsPerPlayer(m)) return;
+            Write(home, install, m, original == "per-player" ? null : original);
+        }
+
         /// <summary>The marked mods whose copy in HellForge lost the value (a new version came)
         /// made per-player again. Returns their names.</summary>
         public static List<string> Reapply(string home, string install, Hf.ModList list)

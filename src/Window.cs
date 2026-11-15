@@ -577,6 +577,17 @@ namespace Hd2Qd.HellForge
                     remove.Margin = new Thickness(8, 0, 0, 0);
                     Cell(4, remove);
                 }
+                else if (Collect.Offered(m, managed))
+                {
+                    // into the library, so a reinstall of HellForge keeps it (the user, 2026-11-16)
+                    var blocked = Collect.Blocked(host);
+                    var collect = Btn(T("collect"), false, () => CollectMod(m));
+                    collect.IsEnabled = !Locked && blocked == null;
+                    collect.Margin = new Thickness(8, 0, 0, 0);
+                    collect.ToolTip = blocked != null ? T(blocked) : T("collect_tip");
+                    ToolTipService.SetShowOnDisabled(collect, true);
+                    Cell(4, collect);
+                }
                 return new Border { Child = g, BorderBrush = B("Grid"), BorderThickness = new Thickness(0, 0, 0, 1) };
             }
 
@@ -642,6 +653,23 @@ namespace Hd2Qd.HellForge
                 if (!Ask(T("remove_ask", e.Name), T("remove"))) return;
                 var inst = install;
                 await Do(() => { Placed.Remove(home, inst, e); return new Hf.Result(); }, T("removed", e.Name));
+            }
+
+            /// <summary>A mod HellForge has from elsewhere into the library, out of HellForge, and the
+            /// list deployed so the library's copy takes its place (Collect).</summary>
+            async void CollectMod(Hf.Mod m)
+            {
+                if (!Ask(T("collect_ask", m.Name), T("collect"))) return;
+                var inst = install;
+                List<string> notPlaced = null;
+                await Do(() =>
+                {
+                    var d = Collect.Run(host, home, inst, m);
+                    notPlaced = Json.List(d, "refused").OfType<string>().ToList();
+                    return new Hf.Result();
+                }, T("collected", m.Name));
+                if (host.TryGetValue("refresh", out var f) && f is Action refresh) refresh();
+                if (notPlaced != null && notPlaced.Count > 0) Tell(T("collect_not_placed") + "\n" + string.Join("\n", notPlaced));
             }
 
             /// <summary>One change through HellForge, then everything read again.</summary>
@@ -908,6 +936,70 @@ namespace Hd2Qd.HellForge
                     }
                     body.Children.Add(row);
                 }
+
+                RenderReinstall();
+            }
+
+            /// <summary>Before HellForge is reinstalled: what it keeps for its player backed up into
+            /// Quick Deploy's settings folder; after: put back as far as the HellForge now there takes
+            /// it (Reinstall).</summary>
+            void RenderReinstall()
+            {
+                Section(T("reinstall"), T("reinstall_hint"));
+                var latest = Reinstall.List(home).FirstOrDefault();
+                var row = Row();
+                var backup = Btn(T("reinstall_backup"), false, BackupForReinstall);
+                backup.IsEnabled = !Locked;
+                row.Children.Add(backup);
+                var restore = Btn(T("reinstall_restore"), false, RestoreAfterReinstall);
+                restore.IsEnabled = !Locked && latest != null;
+                restore.Margin = new Thickness(8, 0, 0, 0);
+                row.Children.Add(restore);
+                row.Children.Add(Small(latest != null ? T("reinstall_latest", latest.When.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture), latest.Version ?? "?") : T("reinstall_none"),
+                                       new Thickness(12, 0, 0, 0)));
+                body.Children.Add(row);
+            }
+
+            async void BackupForReinstall()
+            {
+                // what goes with HellForge's mods folder unless it is put into the library first
+                var outside = (mods?.Mods ?? new List<Hf.Mod>()).Where(m => Collect.Offered(m, PlacedOf(m) != null || deployedPacks.Contains(m.Id))).Select(m => m.Name).ToList();
+                var text = T("reinstall_backup_ask") + (outside.Count > 0 ? "\n\n" + T("reinstall_outside", string.Join("\n", outside)) : "");
+                if (!Ask(text, T("reinstall_backup"))) return;
+                var inst = install;
+                Reinstall.Backup made = null;
+                await Do(() =>
+                {
+                    if (Hf.ReadStatus(inst).Running) throw new HfError(T("locked"));
+                    made = Reinstall.Make(home, inst, outside);
+                    return new Hf.Result();
+                }, null);
+                if (made != null) Foot(T("reinstall_backed_up", made.Folder));
+            }
+
+            async void RestoreAfterReinstall()
+            {
+                var b = Reinstall.List(home).FirstOrDefault();
+                if (b == null) return;
+                var (version, commit) = Reinstall.VersionOf(install);
+                var kind = Reinstall.Compare(b, version, commit);
+                var text = T("reinstall_restore_ask", b.When.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture), b.Version ?? "?", version ?? "?")
+                           + "\n\n" + T("reinstall_kind_" + kind.ToString().ToLowerInvariant())
+                           + (b.NotInLibrary.Count > 0 ? "\n\n" + T("reinstall_restore_outside", string.Join("\n", b.NotInLibrary)) : "");
+                if (!Ask(text, T("reinstall_restore"))) return;
+                var inst = install;
+                Reinstall.Outcome o = null;
+                await Do(() =>
+                {
+                    if (Hf.ReadStatus(inst).Running) throw new HfError(T("locked"));
+                    o = Reinstall.Restore(inst, b);
+                    return new Hf.Result();
+                }, null);
+                if (o == null) return;
+                var said = T("reinstall_restored", o.Restored);
+                if (o.LeftOut.Count > 0) said += "\n" + T("reinstall_left_out", string.Join(", ", o.LeftOut));
+                if (o.Replaced != null) said += "\n" + T("reinstall_replaced", o.Replaced);
+                Tell(said + "\n\n" + T("reinstall_deploy_now"));
             }
 
             int creditsSent = -1;
