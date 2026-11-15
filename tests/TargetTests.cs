@@ -298,6 +298,53 @@ namespace HellForge.Tests
             }
         }
 
+        /// <summary>With every gameplay mod set to this player only, a mod with sources is marked as a
+        /// prebuilt one is (HellForge tags it "source", not "code"), and a mod HellForge keeps shared is
+        /// deployed: said beside the counts, never among the mods not deployed (the user, 2026-11-15).</summary>
+        [Fact]
+        public void ASourceModIsMarkedAndOneHellForgeKeepsSharedIsStillDeployed()
+        {
+            using (var f = new FakeHellForge())
+            {
+                Install.PlacesOverride = () => new[] { f.Install };
+                try
+                {
+                    Plugin.Found(f.Home, true);
+                    var src = f.CodeFolder("chef.smarter", "Smarter");
+                    Directory.CreateDirectory(Path.Combine(src, "src"));
+                    File.WriteAllText(Path.Combine(src, "src", "mod.c"), "int x;");
+                    var spec = f.CodeFolder("local.squads", "Squads");
+                    File.WriteAllText(Path.Combine(spec, "hellforge-data.json"), "{}");
+                    var host = Host(f, () => new List<Dictionary<string, object>>());
+
+                    var before = Hf.ReadMods(f.Install).Mods.Single(m => m.Id == "chef.smarter");
+                    Assert.Contains("source", before.Tags);
+                    Assert.DoesNotContain("code", before.Tags);
+                    Assert.True(Coop.Applies(before));                                       // must live: the switch covers it
+
+                    var r = Plugin.TargetDeploy(host);
+                    Assert.Empty((List<object>)r["refused"]);                                // must die before: "Squads" was "not deployed"
+                    Assert.Contains("; remains shared: Squads", (string)r["said"]);
+                    var list = Hf.ReadMods(f.Install);
+                    Assert.Equal("per-player", list.Mods.Single(m => m.Id == "chef.smarter").Group);
+                    Assert.Equal("gameplay", list.Mods.Single(m => m.Id == "local.squads").Group);
+                    Assert.Empty(list.Problems);                                             // put back as it was: HellForge loads it
+
+                    // why, in the player's words: the data spec, not HellForge's English line
+                    var refusal = Coop.Refused(f.Home).Values.Single();
+                    Assert.Equal("spec", Coop.Reason(refusal));
+                    Assert.Equal("Squads", Coop.NameIn(refusal));
+                    Assert.StartsWith("Squads: This mod has a data spec", Coop.Explain("en", refusal));
+                    Assert.StartsWith("该 MOD 带有数据规格", Coop.Why("zh-CN", refusal));
+                    Assert.Equal("refused", Coop.Lock(true, Coop.Refused(f.Home), list.Mods.Single(m => m.Id == "local.squads")));
+
+                    // the next deploy does not try it again, so says nothing of it
+                    Assert.DoesNotContain("remains shared", (string)Plugin.TargetDeploy(host)["said"]);
+                }
+                finally { Install.PlacesOverride = null; }
+            }
+        }
+
         [Fact]
         public void AHellForgeModHellForgeHasFromElsewhereIsLeftAlone()
         {

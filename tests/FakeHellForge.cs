@@ -142,9 +142,15 @@ namespace HellForge.Tests
                     problems.Add((archive != null ? Path.GetFileName(archive) : Path.GetFileName(dir)) + ": coop is per-player, but native.networkFieldTypes change the network for every player.");
                     return null;
                 }
+                // Mods.DecideTier: nor a mod with a data spec
+                if (perPlayer && File.Exists(Path.Combine(dir, "hellforge-data.json")))
+                {
+                    problems.Add((archive != null ? Path.GetFileName(archive) : Path.GetFileName(dir)) + ": coop is per-player, but its data spec (hellforge-data.json) adds resources every machine numbers alike.");
+                    return null;
+                }
                 var m = new M
                 {
-                    Id = Json.Str(d, "id"), Name = Json.Str(d, "name"), Folder = dir, Archive = archive, Tags = { "code" },
+                    Id = Json.Str(d, "id"), Name = Json.Str(d, "name"), Folder = dir, Archive = archive, Tags = { Directory.Exists(Path.Combine(dir, "src")) ? "source" : "code" },
                     Group = perPlayer ? "per-player" : "gameplay",
                 };
                 if (Json.Bool(d, "bundledInTest")) m.Tags.Add("bundled");

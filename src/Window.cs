@@ -470,10 +470,8 @@ namespace Hd2Qd.HellForge
                 row.Children.Add(sw);
                 var text = new StackPanel();
                 text.Children.Add(new TextBlock { Text = T("all_only_me"), FontSize = 14, FontWeight = FontWeights.SemiBold });
+                // the mods it leaves shared say why in their own rows, not again here
                 text.Children.Add(Small(T("all_only_me_hint"), new Thickness(0, 2, 0, 0)));
-                if (allOn)
-                    foreach (var r in refusedAll.Values)
-                        text.Children.Add(new TextBlock { Text = T("all_only_me_refused", r), FontSize = 12, Foreground = B("Yellow"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 2, 0, 0) });
                 row.Children.Add(text);
                 body.Children.Add(row);
             }
@@ -492,7 +490,7 @@ namespace Hd2Qd.HellForge
                 }, null);
                 if (refusedNow == null) return;
                 Foot(on ? T("all_only_me_done", marked) : T("all_only_me_off"));
-                if (refusedNow.Count > 0) Tell(T("all_only_me_refused_tell") + "\n" + string.Join("\n", refusedNow));
+                if (refusedNow.Count > 0) Tell(T("all_only_me_refused_tell") + "\n" + string.Join("\n", refusedNow.Select(x => Coop.Explain(lang, x))));
             }
 
             // the setting as the last render read it, for each mod's own switch
@@ -529,7 +527,7 @@ namespace Hd2Qd.HellForge
                 if (mine != null || managed) marks.Add(T("mark_library"));
                 if (m.Has("bundled")) marks.Add(T("mark_bundled"));
                 if (m.Has("lua")) marks.Add("LUA");
-                if (m.Has("code")) marks.Add(T("mark_code"));
+                if (Coop.IsCode(m)) marks.Add(T("mark_code"));
                 if (m.Has("stats")) marks.Add(T("mark_stats"));
                 if (marks.Count > 0) names.Children.Add(new TextBlock { Text = string.Join("  ·  ", marks), FontSize = 12, Foreground = B("Muted"), Margin = new Thickness(0, 2, 0, 0) });
                 if (mine != null)
@@ -539,6 +537,15 @@ namespace Hd2Qd.HellForge
                         names.Children.Add(new TextBlock { Text = t, FontSize = 12, Foreground = B(c), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 2, 0, 0) });
                     foreach (var r in Risks(lang, Scan.Of(mine.Library ?? ""), ported))
                         names.Children.Add(new TextBlock { Text = r, FontSize = 12, Foreground = B("Yellow"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 2, 0, 0) });
+                }
+                // with every gameplay mod set to this player only, a mod still shared says why (the
+                // user, 2026-11-15: "为什么这么多MOD被当成玩法？不是开了总开关？")
+                if (allOn && m.Group == "gameplay" && !m.Has("bundled"))
+                {
+                    var refusal = Coop.RefusalOf(refusedAll, m);
+                    var why = refusal != null ? Coop.Why(lang, refusal) : !Coop.Applies(m) ? T("kept_shared_no_code") : null;
+                    if (why != null)
+                        names.Children.Add(new TextBlock { Text = T("kept_shared_row", why), FontSize = 12, Foreground = B(refusal != null ? "Yellow" : "Muted"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 2, 0, 0) });
                 }
                 if (!managed && (m.Options.Count > 1 || m.Options.Any(o => o.Variants.Count > 0))) names.Children.Add(Options(m));
                 Cell(1, names);
@@ -624,7 +631,7 @@ namespace Hd2Qd.HellForge
                     {
                         // HellForge refuses per-player for a mod that changes what every machine shares
                         Coop.Set(home, inst, after.Mods.FirstOrDefault(x => x.Id == m.Id) ?? m, false);
-                        return new Hf.Result { Code = 1, Err = "HellForge: " + problem };
+                        return new Hf.Result { Code = 1, Err = Coop.Explain(lang, m.Name + ": " + problem) };
                     }
                     return new Hf.Result();
                 });

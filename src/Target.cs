@@ -90,7 +90,9 @@ namespace Hd2Qd.HellForge
                 // a code mod placed now is not in the list read before placing: its group (gameplay or
                 // per-player) is HellForge's to say, so the marks read the list again, only then (and
                 // MarkAll reads nothing while "every gameplay mod only for me" is off)
-                foreach (var refused in Coop.MarkAll(home, install, again.Count > 0 || r.CodePlaced > 0 ? null : list).Refused) r.Refused.Add(refused);
+                // a mod HellForge keeps shared is deployed all the same: said beside the counts, never
+                // among the mods not deployed (the user, 2026-11-15: SEAF Squad Stratagems "未部署")
+                foreach (var refused in Coop.MarkAll(home, install, again.Count > 0 || r.CodePlaced > 0 ? null : list).Refused) r.KeptShared.Add(Coop.NameIn(refused));
                 r.Step("co-op marks");
             }
             catch (Exception e) when (e is HfError || e is IOException || e is UnauthorizedAccessException) { r.Refused.Add(e.Message); }
@@ -99,7 +101,7 @@ namespace Hd2Qd.HellForge
             notesAt = DateTime.MinValue;
             return new Dictionary<string, object>
             {
-                ["said"] = Words.F(lang, "target_said", r.Mods, r.Placed, r.Kept, r.Removed),
+                ["said"] = Words.F(lang, "target_said", r.Mods, r.Placed, r.Kept, r.Removed) + (r.KeptShared.Count > 0 ? Words.F(lang, "target_kept_shared", string.Join(Words.Get(lang, "list_sep"), r.KeptShared)) : ""),
                 ["refused"] = r.Refused.Cast<object>().ToList(),
                 // for the manager's log: what took the time
                 ["log"] = string.Join(", ", r.Steps),
@@ -234,6 +236,9 @@ namespace Hd2Qd.HellForge
             /// <summary>Code mods (hellforge-mod.json) this deploy placed.</summary>
             public int CodePlaced;
             public List<string> Refused = new List<string>();
+            /// <summary>Mods deployed that HellForge keeps shared although every gameplay mod is set
+            /// to this player only (Coop.MarkAll), by name; why is on the settings page.</summary>
+            public List<string> KeptShared = new List<string>();
             /// <summary>HellForge's mod list after the deploy placed and removed (its order and
             /// switches aside): the co-op marks are read from it, not read again.</summary>
             public Hf.ModList List;

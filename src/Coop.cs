@@ -45,7 +45,45 @@ namespace Hd2Qd.HellForge
         /// cosmetic. A cosmetic mod ("gameplay": false, such as Super Callouts and Speed Dial for
         /// Liberty) is never compared, so "only affects me" would change nothing (the user,
         /// 2026-11-14: the switch showed in the cosmetic group).</summary>
-        public static bool Applies(Hf.Mod m) => m.Has("code") && !m.Has("bundled") && !m.Has("local-stats") && m.Group != "cosmetic";
+        public static bool Applies(Hf.Mod m) => IsCode(m) && !m.Has("bundled") && !m.Has("local-stats") && m.Group != "cosmetic";
+
+        /// <summary>A code mod by HellForge's tags: "code" for a prebuilt DLL, "source" for one HellForge
+        /// builds from its src\ (HellForge.Cli mods; Launch.cs, HasSource). Reading "code" alone left
+        /// every source mod out of the switch (the user, 2026-11-15: Smarter SEAF, Vertical Orbitals,
+        /// Armored Overhaul and Scope of Authority stayed shared with the setting on).</summary>
+        public static bool IsCode(Hf.Mod m) => m.Has("code") || m.Has("source");
+
+        /// <summary>Why HellForge refused per-player, from its problem line (Mods.DecideTier): "spec"
+        /// (a data spec, hellforge-data.json), "net" (network field types), or null (another reason,
+        /// shown as HellForge said it).</summary>
+        public static string Reason(string refusal)
+        {
+            if (refusal == null) return null;
+            if (refusal.IndexOf("hellforge-data.json", StringComparison.OrdinalIgnoreCase) >= 0 || refusal.IndexOf("data spec", StringComparison.OrdinalIgnoreCase) >= 0) return "spec";
+            if (refusal.IndexOf("networkFieldTypes", StringComparison.OrdinalIgnoreCase) >= 0) return "net";
+            return null;
+        }
+
+        /// <summary>A stored refusal ("name: HellForge's line", MarkAll) in the player's words: the
+        /// mod's name and why it stays shared.</summary>
+        public static string Explain(string lang, string refusal) => Words.F(lang, "kept_shared", NameIn(refusal), Why(lang, refusal));
+
+        /// <summary>Why it stays shared, without the name (for the mod's own row).</summary>
+        public static string Why(string lang, string refusal)
+        {
+            var why = Reason(refusal);
+            if (why != null) return Words.Get(lang, "kept_shared_" + why);
+            var name = NameIn(refusal);
+            var line = refusal != null && refusal.Length > name.Length + 2 ? refusal.Substring(name.Length + 2) : refusal;
+            return Words.F(lang, "kept_shared_other", line);
+        }
+
+        /// <summary>The mod's name in a stored refusal ("name: HellForge's line").</summary>
+        public static string NameIn(string refusal)
+        {
+            int i = refusal?.IndexOf(": ", StringComparison.Ordinal) ?? -1;
+            return i > 0 ? refusal.Substring(0, i) : refusal;
+        }
 
         static readonly Regex CoopValue = new Regex("\"coop\"\\s*:\\s*\"([^\"]*)\"");
 
@@ -178,6 +216,9 @@ namespace Hd2Qd.HellForge
         static List<string> Made(string home) => Json.List(ReadAll(home), "made").OfType<string>().ToList();
 
         static string Key(Hf.Mod m) => m.Id + "|" + m.Version;
+
+        /// <summary>HellForge's refusal stored for this version of the mod, or null.</summary>
+        public static string RefusalOf(IDictionary<string, string> refused, Hf.Mod m) => refused.TryGetValue(Key(m), out var r) ? r : null;
 
         /// <summary>Why a mod's own switch cannot be changed while the setting is on: "all" (the
         /// setting decides: it would mark the mod again at the next read, so a switch of its own

@@ -320,6 +320,8 @@ namespace HellForge.Tests
                 Assert.False(Coop.Applies(new Hf.Mod { Tags = { "pack", "lua" } }));
                 Assert.False(Coop.Applies(new Hf.Mod { Group = "cosmetic", Tags = { "code" } }));   // never compared
                 Assert.True(Coop.Applies(new Hf.Mod { Group = "per-player", Tags = { "code" } }));
+                Assert.True(Coop.Applies(new Hf.Mod { Group = "gameplay", Tags = { "source", "data" } }));   // HellForge builds it
+                Assert.False(Coop.Applies(new Hf.Mod { Group = "gameplay", Tags = { "data" } }));             // no code: no manifest to mark
             }
         }
 
