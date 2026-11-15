@@ -550,6 +550,20 @@ namespace Hd2Qd.HellForge
                 if (!managed && (m.Options.Count > 1 || m.Options.Any(o => o.Variants.Count > 0))) names.Children.Add(Options(m));
                 Cell(1, names);
 
+                // left of the arrows, so every row's arrows stay in one column: Add to library, then the switch
+                var extras = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+                if (mine == null && Collect.Offered(m, managed))
+                {
+                    // into the library, so a reinstall of HellForge keeps it (the user, 2026-11-16)
+                    var blocked = Collect.Blocked(host);
+                    var collect = Btn(T("collect"), false, () => CollectMod(m));
+                    collect.IsEnabled = !Locked && blocked == null;
+                    collect.VerticalAlignment = VerticalAlignment.Center;
+                    collect.Margin = new Thickness(0, 0, 16, 0);
+                    collect.ToolTip = blocked != null ? T(blocked) : T("collect_tip");
+                    ToolTipService.SetShowOnDisabled(collect, true);
+                    extras.Children.Add(collect);
+                }
                 if (Coop.Applies(m))
                 {
                     // while "every gameplay mod" is on, it decides: the mod's own switch shows it and is locked
@@ -562,8 +576,9 @@ namespace Hd2Qd.HellForge
                     only.Children.Add(c);
                     only.Children.Add(new TextBlock { Text = T("only_me"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0), Foreground = lockedBy != null ? B("Muted") : B("Ink") });
                     if (lockedBy != null) c.Opacity = 0.45;             // the Switch style has no look of its own for locked
-                    Cell(2, only);
+                    extras.Children.Add(only);
                 }
+                if (extras.Children.Count > 0) Cell(2, extras);
 
                 var order = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
                 order.Children.Add(Glyph("", T("move_up"), above != null && !Locked && !managed && !deployedPacks.Contains(above.Id), () => Move(m, above)));
@@ -576,17 +591,6 @@ namespace Hd2Qd.HellForge
                     remove.IsEnabled = !Locked;
                     remove.Margin = new Thickness(8, 0, 0, 0);
                     Cell(4, remove);
-                }
-                else if (Collect.Offered(m, managed))
-                {
-                    // into the library, so a reinstall of HellForge keeps it (the user, 2026-11-16)
-                    var blocked = Collect.Blocked(host);
-                    var collect = Btn(T("collect"), false, () => CollectMod(m));
-                    collect.IsEnabled = !Locked && blocked == null;
-                    collect.Margin = new Thickness(8, 0, 0, 0);
-                    collect.ToolTip = blocked != null ? T(blocked) : T("collect_tip");
-                    ToolTipService.SetShowOnDisabled(collect, true);
-                    Cell(4, collect);
                 }
                 return new Border { Child = g, BorderBrush = B("Grid"), BorderThickness = new Thickness(0, 0, 0, 1) };
             }
@@ -955,8 +959,10 @@ namespace Hd2Qd.HellForge
                 restore.IsEnabled = !Locked && latest != null;
                 restore.Margin = new Thickness(8, 0, 0, 0);
                 row.Children.Add(restore);
-                row.Children.Add(Small(latest != null ? T("reinstall_latest", latest.When.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture), latest.Version ?? "?") : T("reinstall_none"),
-                                       new Thickness(12, 0, 0, 0)));
+                var when = Small(latest != null ? T("reinstall_latest", latest.When.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture), latest.Version ?? "?") : T("reinstall_none"),
+                                 new Thickness(12, 0, 0, 0));
+                when.VerticalAlignment = VerticalAlignment.Center;
+                row.Children.Add(when);
                 body.Children.Add(row);
             }
 
