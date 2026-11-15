@@ -61,7 +61,7 @@ version. Mixing versions can crash the game or cause resource errors.
 每个 HellForge 版本（正式版或每夜版）都会为 MOD 生成自己的文件：编译后的代码 MOD、按数据规格生成的资源，以及自带
 MOD 的副本。这些文件不能在其他版本中使用，混用会导致游戏闪退或资源错误。
 
-**严禁以下操作：**
+**请勿进行以下操作：**
 
 | 操作 | 原因 |
 |---|---|
