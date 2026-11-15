@@ -277,8 +277,12 @@ namespace HellForge.Tests
                     Assert.Empty((List<object>)r["refused"]);
                     // its sources: compiled during the deploy by HellForge's own build, its progress said
                     Assert.Contains(f.Calls, c => c[0] == "build-source-mods");
+                    // the compiler, which HellForge's build never fetches itself, installed first (the user, 2026-11-16)
                     lock (said) Assert.Contains(said, t => t.StartsWith("Downloading the compiler"));
+                    Assert.Contains(f.Calls, c => c[0] == "mod-tools");
+                    Assert.Contains("mod tools installed", (string)r["log"]);
                     Assert.Contains("source mods built (1)", (string)r["log"]);
+                    lock (said) Assert.Contains(said, t => t.StartsWith("Compiling \"Native\""));
                     var placed = Path.Combine(f.Mods, "Native");
                     Assert.True(File.Exists(Path.Combine(placed, "src", "mod.c")));
                     Assert.Equal(2, FakeHellForge.Links(Path.Combine(placed, "hellforge-mod.json")));

@@ -20,6 +20,8 @@ namespace HellForge.Tests
     {
         public readonly string Root, Install, Home, Library;
         public bool Running;
+        /// <summary>HellForge's pinned Zig is there (mod-tools installs it).</summary>
+        public bool ToolsInstalled;
         public readonly List<string[]> Calls = new List<string[]>();
         /// <summary>HellForge's state file (mods\hellforge-mods.json): its "disabled" and "order".</summary>
         string StateFile => Path.Combine(Mods, "hellforge-mods.json");
@@ -89,10 +91,17 @@ namespace HellForge.Tests
                 }
                 case "build-source-mods":
                     if (Running) return Fail("a session is running");
-                    File.WriteAllText(Arg("--progress"), "{\"stage\":\"tools\",\"done\":0,\"total\":1,\"mod\":\"Native\"}");
+                    // 0.4.0-beta: never fetches the compiler itself (ModBuilds.InstallTools, installTools false)
+                    if (!ToolsInstalled)
+                        return Ok(new Dictionary<string, object> { ["install"] = Install, ["sourceMods"] = 1L, ["built"] = 0L,
+                            ["problems"] = new List<object> { "someone.native: the mod tools are not installed (the launcher's Mods page: Install mod tools)." } });
+                    File.WriteAllText(Arg("--progress"), "{\"stage\":\"compiling\",\"done\":0,\"total\":1,\"mod\":\"Native\"}");
                     System.Threading.Thread.Sleep(700);                                   // long enough for the deploy to read it
                     File.WriteAllText(Arg("--progress"), "{\"stage\":\"done\",\"done\":1,\"total\":1,\"mod\":\"\"}");
                     return Ok(new Dictionary<string, object> { ["install"] = Install, ["sourceMods"] = 1L, ["built"] = 1L, ["problems"] = new List<object>() });
+                case "mod-tools":
+                    ToolsInstalled = true;
+                    return Ok(new Dictionary<string, object> { ["tools"] = Path.Combine(Install, "tools"), ["zig"] = Path.Combine(Install, "tools", "zig", "zig.exe"), ["ide"] = false });
                 case "mod-order":
                     if (Running) return Fail("a session is running");
                     StateCalls++;

@@ -108,13 +108,33 @@ namespace Hd2Qd.HellForge
             };
         }
 
-        /// <summary>HellForge's own build of its source mods (build-source-mods): it fetches its
-        /// pinned Zig when it has none yet, then compiles what changed. Its progress file is read
-        /// while it runs and said through the host's progress(text), when the manager gives one;
-        /// what did not compile is refused, as the session would leave it out.</summary>
+        /// <summary>HellForge's own build of its source mods (build-source-mods), which compiles what
+        /// changed. It never fetches the compiler itself (0.4.0-beta: installTools false; "the mod
+        /// tools are not installed (the launcher's Mods page: Install mod tools)"), so when it says
+        /// so the plugin installs them with HellForge's mod-tools, its pinned and checksummed Zig,
+        /// and builds again (the user, 2026-11-16: a player's fresh HellForge left Scope of
+        /// Authority out). Its progress file is read while it runs and said through the host's
+        /// progress(text), when the manager gives one; what did not compile is refused, as the
+        /// session would leave it out.</summary>
         static void BuildSources(string install, Dictionary<string, object> host, string lang, Deployed.Result r)
         {
             var progress = host.TryGetValue("progress", out var p) ? p as Action<string> : null;
+            var res = Build(install, lang, progress);
+            if (res.Ok && Problems(res).Any(ToolsMissing))
+            {
+                progress?.Invoke(Words.Get(lang, "build_tools"));
+                var tools = Hf.Run(install, "mod-tools", "--install", install);
+                if (!tools.Ok) { r.Refused.Add(Words.F(lang, "build_failed", tools.Why)); r.Step("mod tools not installed"); return; }
+                r.Step("mod tools installed");
+                res = Build(install, lang, progress);
+            }
+            if (!res.Ok) { r.Refused.Add(Words.F(lang, "build_failed", res.Why)); r.Step("source mods not built"); return; }
+            foreach (var x in Problems(res)) r.Refused.Add(Words.F(lang, "build_problem", x));
+            r.Step("source mods built (" + Json.Long(Json.Obj(res.Out), "built") + ")");
+        }
+
+        static Hf.Result Build(string install, string lang, Action<string> progress)
+        {
             var file = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "hd2qd-hellforge-build-" + Guid.NewGuid().ToString("N").Substring(0, 8) + ".json");
             var run = System.Threading.Tasks.Task.Run(() => Hf.Run(install, "build-source-mods", "--install", install, "--progress", file));
             string last = null;
@@ -124,13 +144,15 @@ namespace Hd2Qd.HellForge
                 if (line != null && line != last) { progress?.Invoke(line); last = line; }
             }
             try { if (File.Exists(file)) File.Delete(file); } catch (IOException) { }
-            var res = run.Result;
-            if (!res.Ok) { r.Refused.Add(Words.F(lang, "build_failed", res.Why)); r.Step("source mods not built"); return; }
-            var d = Json.Obj(res.Out);
-            foreach (var x in Json.List(d, "problems"))
-                r.Refused.Add(Words.F(lang, "build_problem", x is string s ? s : x is Dictionary<string, object> o ? (Json.Str(o, "message") ?? Json.Str(o, "why") ?? Json.Write(o)) : Convert.ToString(x)));
-            r.Step("source mods built (" + Json.Long(d, "built") + ")");
+            return run.Result;
         }
+
+        /// <summary>What did not compile, each as HellForge said it.</summary>
+        static List<string> Problems(Hf.Result res) =>
+            Json.List(Json.Obj(res.Out), "problems").Select(x => x is string s ? s : x is Dictionary<string, object> o ? (Json.Str(o, "message") ?? Json.Str(o, "why") ?? Json.Write(o)) : Convert.ToString(x)).ToList();
+
+        /// <summary>HellForge's words for a build that needs the mod tools (ModBuilds.InstallTools).</summary>
+        static bool ToolsMissing(string problem) => problem.IndexOf("mod tools are not installed", StringComparison.OrdinalIgnoreCase) >= 0;
 
         /// <summary>A line for HellForge's build progress file ({stage, done, total, mod}), or null.</summary>
         internal static string BuildLine(string file, string lang)
