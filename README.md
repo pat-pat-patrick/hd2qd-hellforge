@@ -30,16 +30,17 @@ changes while a session is running.
 
 ## Changing HellForge versions
 
-Each HellForge version (a numbered release or a nightly) builds its own files for the mods: the compiled code mods,
-the resources made from data specs, and its own copies of the bundled mods. These files do not work in another
-version. Mixing versions can crash the game or cause resource errors.
+Each HellForge version (a numbered release or a nightly) ships its own copies of HellForge's own mods (the editor,
+Hell Forge Difficulty, Vanilla Plus), and these change between versions: on a nightly the editor is a shared mod,
+on 0.4.0-beta it affects only its player. A mod can also require a newer HellForge than the one it is copied into.
+Mixing versions can crash the game or cause resource errors.
 
 **Never:**
 
 | Operation | Why |
 |---|---|
 | Replacing only HellForge's program files (`HellForge.exe`, `app`) to change versions | The mods, profiles and game copy remain those of the other version |
-| Copying a `mods` folder, or single mods from it, from an installation of another version | Its code mods were compiled, and its resources numbered, by that version. This includes HellForge's own mods (`hellforge-editor`, `hell-forge`, `vanilla-plus`) |
+| Copying a whole `mods` folder from an installation of another version | It holds that version's copies of HellForge's own mods (`hellforge-editor`, `hell-forge`, `vanilla-plus`) and its mod list (`hellforge-mods.json`) |
 | Copying profiles or saves that a newer version has opened into an older version | A newer version can change profiles in ways an older one cannot read |
 | Copying the game copy (`game`) from another installation by hand | Setup copies the game and checks every file against Steam's hashes |
 | Installing a nightly over the installation you play on | A nightly is untested and is replaced by the next one; HellForge recommends a folder of its own |
@@ -52,21 +53,23 @@ version. Mixing versions can crash the game or cause resource errors.
 3. In the plugin, choose that installation with **Select HellForge.exe…**.
 4. Deploy from Quick Deploy. Each library mod is placed afresh, and HellForge compiles the code mods for its own
    version.
-5. Install mods from outside the library from their original download, never from another installation.
+5. Mods from outside the library: add them to Quick Deploy's library and deploy them from there. Take the original
+   download when you have it; otherwise copy that mod's own folder, never HellForge's own mods.
 6. Use profiles and saves from a backup made before the newer version opened them, or start a new profile.
 7. For co-op, every player uses the same HellForge version, the same nightly included.
 
 ### 更换 HellForge 版本
 
-每个 HellForge 版本（正式版或每夜版）都会为 MOD 生成自己的文件：编译后的代码 MOD、按数据规格生成的资源，以及自带
-MOD 的副本。这些文件不能在其他版本中使用，混用会导致游戏闪退或资源错误。
+每个 HellForge 版本（正式版或每夜版）都带有自己的自带 MOD（编辑器、Hell Forge Difficulty、Vanilla Plus），
+不同版本之间会有改动：例如每夜版的编辑器是联机共享的 MOD，0.4.0-beta 的编辑器仅本玩家生效。MOD 也可能需要比
+目标安装更新的 HellForge。混用版本会导致游戏闪退或资源错误。
 
 **请勿进行以下操作：**
 
 | 操作 | 原因 |
 |---|---|
 | 只替换 HellForge 的程序文件（`HellForge.exe`、`app`）来更换版本 | MOD、档案和游戏副本仍是原版本的 |
-| 从其他版本的安装中复制 `mods` 文件夹或其中的 MOD | 其中的代码 MOD 由那个版本编译，资源由那个版本编号。HellForge 自带的 MOD（`hellforge-editor`、`hell-forge`、`vanilla-plus`）同样如此 |
+| 从其他版本的安装中复制整个 `mods` 文件夹 | 其中包含那个版本的自带 MOD（`hellforge-editor`、`hell-forge`、`vanilla-plus`）和 MOD 列表（`hellforge-mods.json`） |
 | 把被新版本打开过的档案或存档复制到旧版本 | 新版本可能更改档案格式，旧版本无法读取 |
 | 手动从其他安装复制游戏副本（`game`） | 安装程序会复制游戏，并按 Steam 的哈希逐一校验 |
 | 把每夜版安装在日常使用的安装上 | 每夜版未经测试，次日即被替换；HellForge 建议单独安装 |
@@ -78,7 +81,8 @@ MOD 的副本。这些文件不能在其他版本中使用，混用会导致游�
 2. 换回较旧的正式版，或改用每夜版：用该版本的 `HellForge-Setup.exe` 安装到一个新的空文件夹。
 3. 在插件中点击**选择 HellForge.exe…**，选择该安装。
 4. 在 Quick Deploy 中部署：库中的 MOD 会重新放入，HellForge 按自己的版本编译代码 MOD。
-5. 不在库中的 MOD，从原始下载重新安装，不要从其他安装复制。
+5. 不在库中的 MOD：加入 Quick Deploy 的 MOD 库，从库中部署。有原始下载时使用原始下载；没有时只复制该 MOD
+   自己的文件夹，不要复制 HellForge 自带的 MOD。
 6. 档案和存档使用新版本打开之前的备份，或新建档案。
 7. 联机时所有玩家使用同一 HellForge 版本，每夜版也须为同一天的版本。
 
