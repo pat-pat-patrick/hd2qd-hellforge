@@ -141,7 +141,14 @@ namespace Hd2Qd.HellForge
         /// Kept in home\hellforge\coop-all.json.</summary>
         static string AllFile(string home) => Path.Combine(home, "hellforge", "coop-all.json");
 
-        public static bool AllOn(string home) => Json.Bool(ReadAll(home), "on");
+        /// <summary>On unless turned off: on by default (the user, 2026-11-15: "所有玩法MOD设为仅本玩家生效，
+        /// 设为默认"), so a player who never opened the setting has it on, and one who turned it off keeps
+        /// it off ("on": false in the file).</summary>
+        public static bool AllOn(string home)
+        {
+            var all = ReadAll(home);
+            return all == null || !all.ContainsKey("on") || Json.Bool(all, "on");
+        }
 
         /// <summary>The mods HellForge refused, "id|version" to its reason.</summary>
         public static Dictionary<string, string> Refused(string home)

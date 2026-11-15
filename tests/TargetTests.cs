@@ -260,6 +260,7 @@ namespace HellForge.Tests
                 try
                 {
                     Plugin.Found(f.Home, true);
+                    Coop.SetAll(f.Home, f.Install, false);   // turned off (on by default): first the mod placed as it is
                     var dir = Path.Combine(f.Library, "Native_0123");
                     Directory.CreateDirectory(Path.Combine(dir, "src"));
                     File.WriteAllText(Path.Combine(dir, "hellforge-mod.json"), "{\r\n  \"id\": \"someone.native\",\r\n  \"name\": \"Native\"\r\n}\r\n");

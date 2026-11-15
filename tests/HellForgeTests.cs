@@ -324,6 +324,23 @@ namespace HellForge.Tests
         }
 
         [Fact]
+        public void EveryGameplayModOnlyAffectsMeByDefault()
+        {
+            using (var f = new FakeHellForge())
+            {
+                f.CodeFolder("a.free", "Free Mod");
+                // must live: a player who never touched the setting has it on, and the next read marks the mod
+                Assert.Equal(new[] { "Free Mod" }, Coop.MarkAll(f.Home, f.Install).Marked);
+                Assert.Equal("per-player", Hf.ReadMods(f.Install).Mods.Single(m => m.Id == "a.free").Group);
+                // must die: turned off, the mark is taken out and later reads leave the mod shared
+                Coop.SetAll(f.Home, f.Install, false);
+                Assert.Equal("gameplay", Hf.ReadMods(f.Install).Mods.Single(m => m.Id == "a.free").Group);
+                Assert.Empty(Coop.MarkAll(f.Home, f.Install).Marked);
+                Assert.False(Coop.AllOn(f.Home));
+            }
+        }
+
+        [Fact]
         public void EveryGameplayModOnlyAffectsMeExceptWhatHellForgeRefuses()
         {
             using (var f = new FakeHellForge())
@@ -335,7 +352,9 @@ namespace HellForge.Tests
                 var netText = File.ReadAllText(Path.Combine(net, "hellforge-mod.json"));
                 var ownText = File.ReadAllText(Path.Combine(own, "hellforge-mod.json"));
 
-                Assert.False(Coop.AllOn(f.Home));
+                Assert.True(Coop.AllOn(f.Home));                                         // on by default
+                Coop.SetAll(f.Home, f.Install, false);
+                Assert.False(Coop.AllOn(f.Home));                                        // turned off: stays off
                 Assert.Empty(Coop.MarkAll(f.Home, f.Install).Marked);                    // off: nothing
 
                 var (marked, refused) = Coop.SetAll(f.Home, f.Install, true);
