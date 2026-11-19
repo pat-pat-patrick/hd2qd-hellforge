@@ -94,6 +94,9 @@ namespace Hd2Qd.HellForge
             var home = Home(host);
             var install = Found(home, true);
             if (install == null) return false;
+            // (0.15.0) licensed mods: the player's licenses and the online check across HellForge's sandbox
+            try { LicenseRelay.Start(host.TryGetValue("appdata", out var ad) ? ad as string : null, install); }
+            catch (Exception e) when (e is IOException || e is UnauthorizedAccessException || e is ArgumentException) { }
             try { return Sync(home, install, Data(host)).Count > 0; }
             catch (Exception e) when (e is HfError || e is IOException || e is UnauthorizedAccessException) { return false; }
         }

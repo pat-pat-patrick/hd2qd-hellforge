@@ -19,6 +19,7 @@ A plugin for [HD2 Mod Quick Deploy](https://github.com/pat-pat-patrick/hd2-mod-c
 | Profile | The profile in use, new profiles (with what each template starts with), account sync, and editing the profile between sessions: level, currencies (medals, requisition, samples, Forge Credits) within their caps, weapon levels, the pages of the warbonds the profile owns, and items by category (unlock a whole category, or add a named item). It changes the profile as HellForge itself does (its launcher's weapon levels, its backend's warbond purchases), adds and never removes, and backs the profile up first into its `backups` folder, where HellForge's Account sync page can restore it |
 | Settings | Galactic war, co-op, local PlayFab, play with strangers (or HellForge's default), sandbox, changing mods without restarting, the game's launch options, engine log, full crash dump, Forge Credits share, language packs |
 | Mod sync | Sharing your gameplay mods with players who join, listing your public lobbies on the Galactic Map, showing lobbies with host-enforced stat changes, the blocked mods (unblock), and the mods downloaded from hosts (count, size, delete) |
+| Licensed mods | Mods that need a membership license work on HellForge as on the official game. HellForge runs the game with an AppData of its own, so the player's licenses and the online check's answers are copied into it and into the running session, a sign-out takes them away there too, and the game's online question is carried out to the Member licenses plugin. Member content (sealed segments, Member licenses 1.7.0) is placed only in the running session while the game runs and removed when it stops; it is never kept in HellForge's folders |
 | Logs | Each session's logs, export and crash report (nothing is uploaded) |
 | Title-bar icon | HellForge's own icon, read from the player's `HellForge.exe` at run time; the plugin does not include it. An anvil is shown when HellForge is not found |
 
@@ -29,6 +30,11 @@ The plugin uses only what HellForge documents for external launchers
 `hellforge-mods.json`. It never writes
 to HellForge's game copy, `app` folder, backend or network block, and, like HellForge, refuses mod
 changes while a session is running.
+
+For licensed mods it copies files in one folder only, `Arrowhead\Helldivers2\licenses`, between
+the real AppData and HellForge's (`userdata\environment\Roaming\...` and each session's
+`logs\sessions\<id>\game\environment\Roaming\...`): licenses, answers, questions and the
+plaintext of member content, nothing else.
 
 ## Changing HellForge versions
 
