@@ -187,7 +187,7 @@ namespace Hd2Qd.HellForge
         public static void TargetLaunch(System.Windows.Window owner, Dictionary<string, object> host)
         {
             Open(owner, host);
-            if (open?.Tag is View v) v.PlayWhenRead();
+            if ((tabView ?? open?.Tag) is View v) v.PlayWhenRead();
         }
 
         /// <summary>The list in use, as the manager hands it: each enabled mod {id, name, path, files [{src, name}]}.</summary>

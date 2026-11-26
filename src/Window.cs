@@ -19,6 +19,9 @@ namespace Hd2Qd.HellForge
     public static partial class Plugin
     {
         static Window open;
+        // the tab of the manager's window it is in, while one is open (a manager that has tabs)
+        static Action showTab;
+        static View tabView;
 
         /// <summary>The launcher window: the session (start, end, how it goes), HellForge's mods,
         /// the profile and settings, and the logs. One window at a time: opening again brings it
@@ -26,8 +29,20 @@ namespace Hd2Qd.HellForge
         public static void Open(Window owner, Dictionary<string, object> host)
         {
             var lang = Words.Lang(host);
+            if (showTab != null) { showTab(); tabView.Read(); return; }
             if (open != null) { open.Activate(); ((View)open.Tag).Read(); return; }
             var v = new View(host, lang);
+            // a tab of the manager's window when it has them (Quick Deploy 0.25.0, the user,
+            // 2026-11-26: plugin windows piled up); else a window of its own
+            if (host.TryGetValue("tab", out var tk) && tk is Func<string, FrameworkElement, Action, Dictionary<string, object>> tab)
+            {
+                tabView = v;
+                v.ShowSaved();
+                var handle = tab(Title(lang), v.Root, () => { v.Close(); tabView = null; showTab = null; });
+                showTab = handle.TryGetValue("show", out var sh) ? sh as Action : null;
+                v.Read();
+                return;
+            }
             Window w;
             if (host.TryGetValue("window", out var mk) && mk is Func<string, FrameworkElement, Window> make) w = make(Title(lang), v.Root);
             else w = new Window
