@@ -565,11 +565,20 @@ namespace HellForge.Tests
             foreach (var f in files)
                 Assert.Empty(en.Except(f.Value.Keys));
             // every text the code asks for exists in English
-            var src = Path.Combine(Path.GetDirectoryName(asm.Location), "..", "..", "..", "..", "src");
-            if (Directory.Exists(src))
-                foreach (var cs in Directory.GetFiles(src, "*.cs"))
-                    foreach (System.Text.RegularExpressions.Match m in System.Text.RegularExpressions.Regex.Matches(File.ReadAllText(cs), "\\bT\\(\"([a-z_0-9]+)\""))
+            // found up from the tests' output folder: asm.Location is a shadow copy under Temp, where
+            // no src was ever found and this check was skipped without a word (2026-11-28)
+            string src = null;
+            for (var d = new DirectoryInfo(AppDomain.CurrentDomain.BaseDirectory); d != null && src == null; d = d.Parent)
+                if (File.Exists(Path.Combine(d.FullName, "src", "HD2QD.HellForge.csproj"))) src = Path.Combine(d.FullName, "src");
+            Assert.True(src != null, "no src above " + AppDomain.CurrentDomain.BaseDirectory);
+            foreach (var cs in Directory.GetFiles(src, "*.cs"))
+                    foreach (System.Text.RegularExpressions.Match m in System.Text.RegularExpressions.Regex.Matches(File.ReadAllText(cs), "\\bT\\(\"([a-z_0-9]+)\"\\s*[,)]"))     // a whole key, not a prefix put together at run time
                         Assert.True(files["Lang.en.json"].ContainsKey(m.Groups[1].Value), m.Groups[1].Value + " in " + Path.GetFileName(cs));
+            // Change and Local run their work on another thread: a control read inside it throws and
+            // stops the manager's window (issue 27, 2026-11-23: a mod's switch); read it before
+            foreach (var cs in Directory.GetFiles(src, "*.cs"))
+                foreach (System.Text.RegularExpressions.Match m in System.Text.RegularExpressions.Regex.Matches(File.ReadAllText(cs), @"(?:Change|Local)\(\(\) =>[^\n]*\.(?:IsChecked|Text|Value|SelectedItem|SelectedIndex)\b"))
+                    Assert.Fail("a control read on the worker in " + Path.GetFileName(cs) + ": " + m.Value);
             Assert.Equal("HellForge", Plugin.Title("zh-CN"));
             Assert.NotEqual(Plugin.Summary("en"), Plugin.Summary("zh-CN"));
             Assert.Equal(Plugin.Summary("en"), Plugin.Summary("de"));

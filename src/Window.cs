@@ -38,6 +38,9 @@ namespace Hd2Qd.HellForge
             {
                 tabView = v;
                 v.ShowSaved();
+                // in a tab, a column in the middle as wide as the manager's own pages, not the
+                // whole window (the user, 2026-11-28: "太分散到两边了")
+                v.Root.MaxWidth = 1100;
                 var handle = tab(Title(lang), v.Root, () => { v.Close(); tabView = null; showTab = null; });
                 showTab = handle.TryGetValue("show", out var sh) ? sh as Action : null;
                 v.Read();
@@ -529,7 +532,9 @@ namespace Hd2Qd.HellForge
                 bool managed = deployedPacks.Contains(m.Id);
                 var sw = new CheckBox { Style = S("Switch"), IsChecked = m.Enabled, VerticalAlignment = VerticalAlignment.Center, IsEnabled = !Locked && !m.Has("local-stats") && !managed,
                                         ToolTip = managed ? T("managed") : m.Enabled ? T("switch_off") : T("switch_on") };
-                sw.Click += (s, e) => Change(() => Hf.Run(install, "mod-switch", "--id", m.Id, "--on", sw.IsChecked == true ? "yes" : "no"));
+                // the switch read here, on the window's thread: Change runs its work on another, where
+                // reading a control throws and stopped the manager's window (issue 27, 2026-11-23)
+                sw.Click += (s, e) => { var on = sw.IsChecked == true ? "yes" : "no"; Change(() => Hf.Run(install, "mod-switch", "--id", m.Id, "--on", on)); };
                 Cell(0, sw);
 
                 var names = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 6, 12, 6) };
@@ -619,7 +624,7 @@ namespace Hd2Qd.HellForge
                 {
                     var box = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 18, 4) };
                     var tick = new CheckBox { Content = o.Name, Style = S("Tick"), IsChecked = o.On, IsEnabled = !Locked, VerticalAlignment = VerticalAlignment.Center };
-                    tick.Click += (s, e) => Change(() => Hf.Run(install, "mod-pack", "--id", m.Id, "--option", o.Name, "--on", tick.IsChecked == true ? "yes" : "no"));
+                    tick.Click += (s, e) => { var on = tick.IsChecked == true ? "yes" : "no"; Change(() => Hf.Run(install, "mod-pack", "--id", m.Id, "--option", o.Name, "--on", on)); };
                     box.Children.Add(tick);
                     if (o.Variants.Count > 0)
                     {
